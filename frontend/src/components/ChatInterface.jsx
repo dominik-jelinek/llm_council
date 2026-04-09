@@ -8,6 +8,8 @@ import './ChatInterface.css';
 export default function ChatInterface({
   conversation,
   onSendMessage,
+  onRetryLastMessage,
+  canRetryLastMessage,
   isLoading,
 }) {
   const [input, setInput] = useState('');
@@ -120,26 +122,37 @@ export default function ChatInterface({
         <div ref={messagesEndRef} />
       </div>
 
-      {conversation.messages.length === 0 && (
-        <form className="input-form" onSubmit={handleSubmit}>
-          <textarea
-            className="message-input"
-            placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isLoading}
-            rows={3}
-          />
-          <button
-            type="submit"
-            className="send-button"
-            disabled={!input.trim() || isLoading}
-          >
-            Send
+      {canRetryLastMessage && (
+        <div className="loading-indicator">
+          <span>The last user message has no saved response yet.</span>
+          <button type="button" className="send-button" onClick={onRetryLastMessage}>
+            Retry
           </button>
-        </form>
+        </div>
       )}
+
+      <form className="input-form" onSubmit={handleSubmit}>
+        <textarea
+          className="message-input"
+          placeholder={
+            conversation.messages.length === 0
+              ? 'Ask your question... (Shift+Enter for new line, Enter to send)'
+              : 'Ask a follow-up... (Shift+Enter for new line, Enter to send)'
+          }
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={isLoading}
+          rows={3}
+        />
+        <button
+          type="submit"
+          className="send-button"
+          disabled={!input.trim() || isLoading}
+        >
+          Send
+        </button>
+      </form>
     </div>
   );
 }

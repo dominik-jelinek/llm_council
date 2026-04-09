@@ -174,6 +174,83 @@ Provide a clear, well-reasoned final answer that represents the council's collec
     }
 
 
+def build_continuation_messages(
+    conversation_messages: List[Dict[str, Any]],
+    user_query: str
+) -> List[Dict[str, str]]:
+    """
+    Build follow-up chat context using prior user messages and chairman answers only.
+
+    Args:
+        conversation_messages: Stored conversation messages before the latest user turn
+        user_query: The latest user message
+
+    Returns:
+        Chat-completions message list for the chairman model
+    """
+    messages = [{
+        "role": "system",
+        "content": (
+            "You are the Chairman of an LLM Council continuing an existing conversation. "
+            "Previous assistant messages are prior final answers synthesized by the chairman. "
+            "Use the conversation history to answer the latest user message consistently and clearly."
+        )
+    }]
+
+    for message in conversation_messages:
+        if message.get("role") == "user" and message.get("content"):
+            messages.append({
+                "role": "user",
+                "content": message["content"]
+            })
+            continue
+
+        if message.get("role") == "assistant":
+            stage3 = message.get("stage3") or {}
+            final_response = stage3.get("response")
+            if final_response:
+                messages.append({
+                    "role": "assistant",
+                    "content": final_response
+                })
+
+    messages.append({
+        "role": "user",
+        "content": user_query
+    })
+
+    return messages
+
+
+async def continue_conversation_with_chairman(
+    conversation_messages: List[Dict[str, Any]],
+    user_query: str
+) -> Dict[str, Any]:
+    """
+    Continue an existing conversation using the chairman only.
+
+    Args:
+        conversation_messages: Stored conversation messages before the latest user turn
+        user_query: The latest user message
+
+    Returns:
+        Dict with 'model' and 'response' keys
+    """
+    messages = build_continuation_messages(conversation_messages, user_query)
+    response = await query_model(CHAIRMAN_MODEL, messages)
+
+    if response is None:
+        return {
+            "model": CHAIRMAN_MODEL,
+            "response": "Error: Unable to continue the conversation."
+        }
+
+    return {
+        "model": CHAIRMAN_MODEL,
+        "response": response.get("content", "")
+    }
+
+
 def parse_ranking_from_text(ranking_text: str) -> List[str]:
     """
     Parse the FINAL RANKING section from the model's response.

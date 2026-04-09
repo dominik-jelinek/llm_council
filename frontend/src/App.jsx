@@ -57,19 +57,101 @@ function App() {
     setCurrentConversationId(id);
   };
 
-  const handleSendMessage = async (content) => {
-    if (!currentConversationId) return;
+  const handleStreamEvent = (conversationId, eventType, event) => {
+    switch (eventType) {
+      case 'stage1_start':
+        setCurrentConversation((prev) => {
+          const messages = [...prev.messages];
+          const lastMsg = messages[messages.length - 1];
+          lastMsg.loading.stage1 = true;
+          return { ...prev, messages };
+        });
+        break;
+
+      case 'stage1_complete':
+        setCurrentConversation((prev) => {
+          const messages = [...prev.messages];
+          const lastMsg = messages[messages.length - 1];
+          lastMsg.stage1 = event.data;
+          lastMsg.loading.stage1 = false;
+          return { ...prev, messages };
+        });
+        break;
+
+      case 'stage2_start':
+        setCurrentConversation((prev) => {
+          const messages = [...prev.messages];
+          const lastMsg = messages[messages.length - 1];
+          lastMsg.loading.stage2 = true;
+          return { ...prev, messages };
+        });
+        break;
+
+      case 'stage2_complete':
+        setCurrentConversation((prev) => {
+          const messages = [...prev.messages];
+          const lastMsg = messages[messages.length - 1];
+          lastMsg.stage2 = event.data;
+          lastMsg.metadata = event.metadata;
+          lastMsg.loading.stage2 = false;
+          return { ...prev, messages };
+        });
+        break;
+
+      case 'stage3_start':
+        setCurrentConversation((prev) => {
+          const messages = [...prev.messages];
+          const lastMsg = messages[messages.length - 1];
+          lastMsg.loading.stage3 = true;
+          return { ...prev, messages };
+        });
+        break;
+
+      case 'stage3_complete':
+        setCurrentConversation((prev) => {
+          const messages = [...prev.messages];
+          const lastMsg = messages[messages.length - 1];
+          lastMsg.stage3 = event.data;
+          lastMsg.loading.stage3 = false;
+          return { ...prev, messages };
+        });
+        break;
+
+      case 'title_complete':
+        loadConversations();
+        break;
+
+      case 'complete':
+        loadConversations();
+        loadConversation(conversationId);
+        setIsLoading(false);
+        break;
+
+      case 'error':
+        console.error('Stream error:', event.message);
+        loadConversations();
+        loadConversation(conversationId);
+        setIsLoading(false);
+        break;
+
+      default:
+        console.log('Unknown event type:', eventType);
+    }
+  };
+
+  const runStreamRequest = async ({ conversationId, requestFn, appendUserMessage, content }) => {
+    if (!conversationId) return;
 
     setIsLoading(true);
     try {
-      // Optimistically add user message to UI
-      const userMessage = { role: 'user', content };
-      setCurrentConversation((prev) => ({
-        ...prev,
-        messages: [...prev.messages, userMessage],
-      }));
+      if (appendUserMessage) {
+        const userMessage = { role: 'user', content };
+        setCurrentConversation((prev) => ({
+          ...prev,
+          messages: [...prev.messages, userMessage],
+        }));
+      }
 
-      // Create a partial assistant message that will be updated progressively
       const assistantMessage = {
         role: 'assistant',
         stage1: null,
@@ -83,103 +165,48 @@ function App() {
         },
       };
 
-      // Add the partial assistant message
       setCurrentConversation((prev) => ({
         ...prev,
         messages: [...prev.messages, assistantMessage],
       }));
 
-      // Send message with streaming
-      await api.sendMessageStream(currentConversationId, content, (eventType, event) => {
-        switch (eventType) {
-          case 'stage1_start':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.loading.stage1 = true;
-              return { ...prev, messages };
-            });
-            break;
-
-          case 'stage1_complete':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.stage1 = event.data;
-              lastMsg.loading.stage1 = false;
-              return { ...prev, messages };
-            });
-            break;
-
-          case 'stage2_start':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.loading.stage2 = true;
-              return { ...prev, messages };
-            });
-            break;
-
-          case 'stage2_complete':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.stage2 = event.data;
-              lastMsg.metadata = event.metadata;
-              lastMsg.loading.stage2 = false;
-              return { ...prev, messages };
-            });
-            break;
-
-          case 'stage3_start':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.loading.stage3 = true;
-              return { ...prev, messages };
-            });
-            break;
-
-          case 'stage3_complete':
-            setCurrentConversation((prev) => {
-              const messages = [...prev.messages];
-              const lastMsg = messages[messages.length - 1];
-              lastMsg.stage3 = event.data;
-              lastMsg.loading.stage3 = false;
-              return { ...prev, messages };
-            });
-            break;
-
-          case 'title_complete':
-            // Reload conversations to get updated title
-            loadConversations();
-            break;
-
-          case 'complete':
-            // Stream complete, reload conversations list
-            loadConversations();
-            setIsLoading(false);
-            break;
-
-          case 'error':
-            console.error('Stream error:', event.message);
-            setIsLoading(false);
-            break;
-
-          default:
-            console.log('Unknown event type:', eventType);
-        }
+      await requestFn((eventType, event) => {
+        handleStreamEvent(conversationId, eventType, event);
       });
     } catch (error) {
-      console.error('Failed to send message:', error);
-      // Remove optimistic messages on error
-      setCurrentConversation((prev) => ({
-        ...prev,
-        messages: prev.messages.slice(0, -2),
-      }));
+      console.error('Failed to run conversation request:', error);
+      loadConversations();
+      loadConversation(conversationId);
       setIsLoading(false);
     }
   };
+
+  const handleSendMessage = async (content) => {
+    if (!currentConversationId) return;
+
+    await runStreamRequest({
+      conversationId: currentConversationId,
+      requestFn: (onEvent) => api.sendMessageStream(currentConversationId, content, onEvent),
+      appendUserMessage: true,
+      content,
+    });
+  };
+
+  const handleRetryLastMessage = async () => {
+    if (!currentConversationId) return;
+
+    await runStreamRequest({
+      conversationId: currentConversationId,
+      requestFn: (onEvent) => api.retryMessageStream(currentConversationId, onEvent),
+      appendUserMessage: false,
+    });
+  };
+
+  const canRetryLastMessage =
+    !!currentConversation &&
+    currentConversation.messages.length > 0 &&
+    currentConversation.messages[currentConversation.messages.length - 1].role === 'user' &&
+    !isLoading;
 
   return (
     <div className="app">
@@ -192,6 +219,8 @@ function App() {
       <ChatInterface
         conversation={currentConversation}
         onSendMessage={handleSendMessage}
+        onRetryLastMessage={handleRetryLastMessage}
+        canRetryLastMessage={canRetryLastMessage}
         isLoading={isLoading}
       />
     </div>

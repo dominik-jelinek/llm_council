@@ -1,16 +1,23 @@
-# React + Vite
+# Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+FastAPI serves this directory directly:
 
-Currently, two official plugins are available:
+- `templates/`: Jinja HTML pages and reusable fragments.
+- `static/app.css`: layout and components.
+- `static/markdown.css`: rendered message formatting.
+- `static/app.js`: tabs, copying, keyboard shortcuts, scrolling, and request feedback.
+- `static/drafts.js`: per-conversation composer drafts in tab-local browser storage.
+- `static/projects.js`: project collapse state, assignment dialog, and drag-and-drop.
+- `static/sidebar-scroll.js`: sidebar scroll position across navigation and updates.
+- `static/vendor/`: pinned HTMX and SSE extension, including licenses.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+There is no build step. Start the application from the project root with
+`./start.sh`, then open http://localhost:8001.
 
-## React Compiler
+HTMX submits forms and swaps server-rendered HTML. Each run opens its own
+read-only SSE connection; stage updates target only that stage. Sidebar and
+composer changes use out-of-band swaps. Navigation closes the old subscription,
+while the server-owned task continues.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Run `uv run --with playwright python -m tests.browser_smoke` from the project
+root for the browser checks. See the root README for setup.

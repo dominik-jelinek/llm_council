@@ -1,79 +1,71 @@
-"""OpenRouter API client for making LLM requests."""
+"""Async OpenRouter SDK adapter; provider failures remain isolated per model."""
+
+import asyncio
+import logging
+from collections.abc import Sequence
+from typing import Any
 
 import httpx
-from typing import List, Dict, Any, Optional
-from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
+from openrouter import OpenRouter
+from openrouter.errors import OpenRouterError
+
+from backend.config import ModelSpec, get_settings, model_label
+from backend.usage import begin_request, finish_request, normalize_usage
+
+logger = logging.getLogger(__name__)
 
 
 async def query_model(
-    model: str,
-    messages: List[Dict[str, str]],
-    timeout: float = 120.0
-) -> Optional[Dict[str, Any]]:
-    """
-    Query a single model via OpenRouter API.
-
-    Args:
-        model: OpenRouter model identifier (e.g., "openai/gpt-4o")
-        messages: List of message dicts with 'role' and 'content'
-        timeout: Request timeout in seconds
-
-    Returns:
-        Response dict with 'content' and optional 'reasoning_details', or None if failed
-    """
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-    }
-
-    payload = {
-        "model": model,
-        "messages": messages,
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(
-                OPENROUTER_API_URL,
-                headers=headers,
-                json=payload
-            )
-            response.raise_for_status()
-
-            data = response.json()
-            message = data['choices'][0]['message']
-
-            return {
-                'content': message.get('content'),
-                'reasoning_details': message.get('reasoning_details')
-            }
-
-    except Exception as e:
-        print(f"Error querying model {model}: {e}")
+    model: ModelSpec, messages: list[dict[str, str]], timeout: float = 120.0
+) -> dict[str, Any] | None:
+    """Call one model/effort pair, returning plain data or None on provider failure."""
+    model_id, effort = model
+    label = model_label(model_id, effort)
+    api_key = get_settings().openrouter_api_key
+    if api_key is None or not api_key.get_secret_value().strip():
+        logger.error("OPENROUTER_API_KEY is not configured; cannot query model %s", label)
         return None
+
+    request = begin_request(model)
+    try:
+        async with OpenRouter(api_key=api_key.get_secret_value()) as client:
+            response = await client.chat.send_async(
+                model=model_id,
+                messages=messages,
+                reasoning={"effort": effort} if effort is not None else None,
+                stream=False,
+                timeout_ms=int(timeout * 1000),
+                # The app exposes Retry; keep SDK retries from extending run lifetimes.
+                retries=None,
+            )
+            payload = response.model_dump(mode="json")
+            request["generation_id"] = payload.get("id")
+            request["usage"] = normalize_usage(payload.get("usage"))
+            message = response.choices[0].message
+            if not isinstance(message.content, str) or not message.content.strip():
+                request["status"] = "failed"
+                logger.warning("Model %s returned an empty response", label)
+                return None
+            request["status"] = "complete"
+            return {
+                "content": message.content,
+                "reasoning_details": message.model_dump(mode="json").get("reasoning_details"),
+                "request": request,
+            }
+    except asyncio.CancelledError:
+        request["status"] = "cancelled"
+        raise
+    except (OpenRouterError, httpx.HTTPError, IndexError, TypeError, ValueError):
+        request["status"] = "failed"
+        logger.warning("Request to model %s failed", label, exc_info=True)
+        return None
+    finally:
+        finish_request()
 
 
 async def query_models_parallel(
-    models: List[str],
-    messages: List[Dict[str, str]]
-) -> Dict[str, Optional[Dict[str, Any]]]:
-    """
-    Query multiple models in parallel.
-
-    Args:
-        models: List of OpenRouter model identifiers
-        messages: List of message dicts to send to each model
-
-    Returns:
-        Dict mapping model identifier to response dict (or None if failed)
-    """
-    import asyncio
-
-    # Create tasks for all models
-    tasks = [query_model(model, messages) for model in models]
-
-    # Wait for all to complete
-    responses = await asyncio.gather(*tasks)
-
-    # Map models to their responses
-    return {model: response for model, response in zip(models, responses)}
+    models: Sequence[ModelSpec], messages: list[dict[str, str]]
+) -> list[tuple[ModelSpec, dict[str, Any] | None]]:
+    """Return one result per configured member in order, including identical entries."""
+    responses = await asyncio.gather(*(query_model(model, messages) for model in models))
+    return list(zip(models, responses))

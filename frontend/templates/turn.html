@@ -1,0 +1,11 @@
+{% if not retry %}
+  {% set message = messages[-1] %}
+  {% set message_id = message.id %}
+  {% include "message.html" %}
+{% endif %}
+{% include "run.html" %}
+{% if not run.history and not retry %}<div id="empty-state" hx-swap-oob="delete"></div>{% endif %}
+{% with oob = true %}
+  {% include "composer.html" %}
+  {% include "sidebar.html" %}
+{% endwith %}

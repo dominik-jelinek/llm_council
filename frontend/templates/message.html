@@ -1,0 +1,41 @@
+{% from "copy.html" import copy_button %}
+{% from "usage/footer.html" import usage_footer %}
+<article class="message-group" id="message-{{ message.id }}">
+  {% if message.role == 'user' %}
+  {% set branch = branch_navigation.get(message.id) if branch_navigation else none %}
+  {% if branch and branch.count > 1 %}
+    {% include "branches/navigation.html" %}
+  {% endif %}
+  <div class="user-message">
+    <div class="message-header">
+      <div class="message-label">You</div>
+      <div class="message-actions">
+        {{ copy_button(message.content, 'Copy your message') }}
+        {% if conversation and editing_message_id != message.id %}
+        <a class="edit-button" role="button" href="/conversations/{{ conversation.id }}/messages/{{ message.id }}/edit"
+           hx-get="/conversations/{{ conversation.id }}/messages/{{ message.id }}/edit"
+           hx-target="closest article" hx-swap="outerHTML">Edit</a>
+        {% endif %}
+      </div>
+    </div>
+    {% if editing_message_id and editing_message_id == message.id %}
+      {% include "branches/editor.html" %}
+    {% else %}
+    <div class="message-content markdown-content" hx-disable>{{ message.content | markdown }}</div>
+    {% endif %}
+    {% if conversation and not busy and pending and message.id == conversation.messages[-1].id %}
+      {% set requests = conversation.get('request_usage', {}).get(message.id, []) %}
+      {% if requests %}{{ usage_footer(requests, 'Interaction') }}{% endif %}
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="assistant-message">
+    <div class="message-label">{{ 'LLM Council' if message.stage1 else 'Chairman' }}</div>
+    {% set metadata = message.get('metadata') or ranking_metadata(message.stage1, message.stage2) %}
+    {% include "stages/stage1.html" %}
+    {% include "stages/stage2.html" %}
+    {% include "stages/stage3.html" %}
+    {{ usage_footer(conversation.get('request_usage', {}).get(message.parent_id, []), 'Interaction') }}
+  </div>
+  {% endif %}
+</article>

@@ -1,0 +1,28 @@
+<div id="project-editor">
+  <div class="setup-heading">
+    <h2 id="project-editor-title">{{ 'Move conversation' if target_conversation else 'New project' }}</h2>
+    <a href="/" class="secondary-button" data-close-dialog aria-label="Close project editor">Close</a>
+  </div>
+  {% if error %}<p class="setup-error" role="alert">{{ error }}</p>{% endif %}
+  {% set action = '/conversations/' ~ target_conversation.id ~ '/project' if target_conversation else '/projects' %}
+  <form action="{{ action }}" method="post" hx-post="{{ action }}" hx-target="#sidebar"
+        hx-swap="outerHTML" hx-disabled-elt="find button">
+    <input type="hidden" name="current_conversation_id" value="{{ current_conversation_id }}">
+    <input type="hidden" name="current_project_id" value="{{ current_project_id }}">
+    {% if target_conversation %}
+    <input type="hidden" name="editor" value="true">
+    <p class="project-conversation-title">{{ target_conversation.title }}</p>
+    <label for="move-project">Project</label>
+    <select id="move-project" name="project_id">
+      <option value="" {% if not project_id %}selected{% endif %}>No project</option>
+      {% for item in projects %}
+      <option value="{{ item.id }}" {% if item.id == project_id %}selected{% endif %}>{{ item.name }}</option>
+      {% endfor %}
+    </select>
+    {% else %}
+    <label for="project-name">Project name</label>
+    <input id="project-name" name="name" value="{{ name }}" required maxlength="80" autocomplete="off">
+    {% endif %}
+    <div class="setup-actions"><button class="send-button" type="submit">{{ 'Move' if target_conversation else 'Create project' }}</button></div>
+  </form>
+</div>

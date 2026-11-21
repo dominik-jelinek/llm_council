@@ -1,0 +1,20 @@
+{% macro effort_select(name, selected, efforts) %}
+<label>Reasoning effort
+  <select name="{{ name }}">
+    <option value="" {% if not selected %}selected{% endif %}>Default</option>
+    {% for effort in efforts %}
+    <option value="{{ effort }}" {% if selected == effort %}selected{% endif %}>{{ effort | capitalize }}</option>
+    {% endfor %}
+  </select>
+</label>
+{% endmacro %}
+
+{% macro member_row(model, effort, efforts) %}
+<div class="member-row">
+  <label>Model ID
+    <input name="member_model" value="{{ model }}" placeholder="provider/model" required autocomplete="off" spellcheck="false">
+  </label>
+  {{ effort_select('member_effort', effort, efforts) }}
+  <button type="button" class="secondary-button remove-member" aria-label="Remove council member">Remove</button>
+</div>
+{% endmacro %}

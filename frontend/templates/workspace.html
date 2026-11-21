@@ -1,0 +1,19 @@
+<div id="workspace" class="app" hx-history-elt>
+  {% include "sidebar.html" %}
+  <main class="chat-interface" id="conversation" data-conversation-id="{{ conversation.id if conversation else '' }}">
+    <div class="messages-container" id="messages" aria-label="Conversation messages">
+      {% if not messages %}
+      <div class="empty-state" id="empty-state">
+        <h2>Start a conversation</h2>
+        <p>{{ project.name if project else 'Ask a question to consult the LLM Council' }}</p>
+      </div>
+      {% endif %}
+      {% for message in messages %}
+        {% set message_id = message.id %}
+        {% include "message.html" %}
+      {% endfor %}
+      {% if run %}{% include "run.html" %}{% endif %}
+    </div>
+    {% include "composer.html" %}
+  </main>
+</div>

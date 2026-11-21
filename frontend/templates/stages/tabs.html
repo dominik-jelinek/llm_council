@@ -1,0 +1,36 @@
+{% from "copy.html" import copy_button %}
+{% from "usage/footer.html" import usage_footer %}
+{% macro model_tabs(items, message_id, stage, labels={}) %}
+<div class="model-tabs">
+  <div class="tabs" role="tablist" aria-label="{{ 'Model evaluations' if stage == 'stage2' else 'Model responses' }}">
+    {% for item in items %}
+    {% set tab_id = message_id ~ '-' ~ stage ~ '-' ~ loop.index %}
+    <button type="button" class="tab{% if loop.first %} active{% endif %}" role="tab"
+            id="tab-{{ tab_id }}" aria-controls="panel-{{ tab_id }}"
+            aria-selected="{{ 'true' if loop.first else 'false' }}" tabindex="{{ 0 if loop.first else -1 }}">
+      {{ result_model_label(item) | short_model }}
+    </button>
+    {% endfor %}
+  </div>
+  {% for item in items %}
+  {% set tab_id = message_id ~ '-' ~ stage ~ '-' ~ loop.index %}
+  <div class="tab-content" role="tabpanel" id="panel-{{ tab_id }}" aria-labelledby="tab-{{ tab_id }}"
+       tabindex="0" {% if not loop.first %}hidden{% endif %}>
+    <div class="message-header">
+      <div class="model-name">{{ result_model_label(item) }}</div>
+      {{ copy_button(item.ranking if stage == 'stage2' else item.response, 'Copy ' ~ (result_model_label(item) | short_model) ~ (' evaluation' if stage == 'stage2' else ' response')) }}
+    </div>
+    <div class="markdown-content" hx-disable>
+      {% if stage == 'stage2' %}{{ item.ranking | deanonymize(labels) | markdown }}{% else %}{{ item.response | markdown }}{% endif %}
+    </div>
+    {% if stage == 'stage2' and item.parsed_ranking %}
+    <div class="parsed-ranking">
+      <strong>Extracted Ranking:</strong>
+      <ol>{% for label in item.parsed_ranking %}<li>{{ labels.get(label, label) | short_model }}</li>{% endfor %}</ol>
+    </div>
+    {% endif %}
+    {{ usage_footer([item.request] if item.request else [], result_model_label(item)) }}
+  </div>
+  {% endfor %}
+</div>
+{% endmacro %}

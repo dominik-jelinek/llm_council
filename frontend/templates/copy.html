@@ -1,0 +1,7 @@
+{% macro copy_button(text, label) %}
+<span class="copy-control">
+  <button type="button" class="copy-button" aria-label="{{ label }}">Copy</button>
+  <span class="copy-source" hidden hx-disable>{{ text }}</span>
+  <span class="copy-status" role="status"></span>
+</span>
+{% endmacro %}

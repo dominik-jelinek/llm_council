@@ -1,0 +1,11 @@
+<nav class="branch-navigation" aria-label="Message branches">
+  <form action="/conversations/{{ conversation.id }}/messages/{{ message.id }}/branch" method="post"
+        hx-post="/conversations/{{ conversation.id }}/messages/{{ message.id }}/branch"
+        hx-target="#workspace" hx-swap="outerHTML" hx-disabled-elt="find button:first-of-type, find button:last-of-type">
+    <button type="submit" name="target_id" value="{{ branch.previous_id or '' }}"
+            class="branch-button" aria-label="Previous branch" {% if not branch.previous_id %}disabled{% endif %}>&larr;</button>
+    <span class="branch-position" aria-live="polite">{{ branch.index }} / {{ branch.count }}</span>
+    <button type="submit" name="target_id" value="{{ branch.next_id or '' }}"
+            class="branch-button" aria-label="Next branch" {% if not branch.next_id %}disabled{% endif %}>&rarr;</button>
+  </form>
+</nav>

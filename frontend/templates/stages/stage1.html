@@ -1,0 +1,7 @@
+{% from "stages/tabs.html" import model_tabs %}
+{% if message.stage1 %}
+<details class="stage stage1" id="stage-{{ message_id }}-stage1">
+  <summary class="stage-title">Stage 1: Individual Responses</summary>
+  {{ model_tabs(message.stage1, message_id, 'stage1') }}
+</details>
+{% endif %}

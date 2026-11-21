@@ -1,0 +1,51 @@
+<aside class="sidebar" id="sidebar" {% if oob %}hx-swap-oob="outerHTML"{% endif %}>
+  <div class="sidebar-header">
+    <h1><a href="/" hx-get="/" hx-target="#workspace" hx-swap="outerHTML" hx-push-url="true">LLM Council</a></h1>
+    <div class="sidebar-actions">
+      <a class="secondary-button setup-council-button" href="/council/setup" role="button"
+         hx-get="/council/setup" hx-target="#council-settings" hx-swap="outerHTML"
+         aria-haspopup="dialog">Setup Council</a>
+      <form action="/conversations" method="post" hx-post="/conversations" hx-target="#workspace" hx-swap="outerHTML" hx-disabled-elt="find button">
+        <button class="new-conversation-btn" type="submit">+ New Conversation</button>
+      </form>
+    </div>
+  </div>
+  <div id="sidebar-context" hidden>
+    <input name="current_conversation_id" value="{{ conversation.id if conversation else '' }}">
+    <input name="current_project_id" value="{{ project.id if project and not conversation else '' }}">
+  </div>
+  <nav class="sidebar-content" aria-label="Conversations">
+    <details id="projects-section" class="project-disclosure" open>
+      <summary class="projects-heading">
+        <span>Projects</span>
+        <a class="sidebar-icon-button" href="/projects/new" role="button" title="New project"
+           aria-label="New project" aria-haspopup="dialog" hx-get="/projects/new"
+           hx-target="#project-editor" hx-swap="outerHTML" hx-include="#sidebar-context">+</a>
+      </summary>
+      {% for group in projects %}
+      <details id="project-{{ group.id }}" class="project-group project-disclosure" data-project-drop-target="{{ group.id }}">
+        <summary class="project-heading">
+          <span class="project-name">{{ group.name }}</span>
+          <span class="project-count">{{ group.conversations | length }}</span>
+          <a class="sidebar-icon-button" href="/?project={{ group.id }}" role="button"
+             aria-label="New conversation in {{ group.name }}" title="New conversation"
+             hx-get="/?project={{ group.id }}" hx-target="#workspace" hx-swap="outerHTML" hx-push-url="true">+</a>
+        </summary>
+        <div class="project-conversations">
+          {% for item in group.conversations %}{% include "conversation_row.html" %}{% endfor %}
+        </div>
+      </details>
+      {% endfor %}
+    </details>
+    <div id="ungrouped-conversations" data-project-drop-target="">
+      <h2 class="conversations-heading">Conversations</h2>
+      <div class="conversation-list">
+        {% for item in ungrouped_conversations %}
+          {% include "conversation_row.html" %}
+        {% else %}
+          {% if not conversations %}<p class="no-conversations">No conversations yet</p>{% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </nav>
+</aside>

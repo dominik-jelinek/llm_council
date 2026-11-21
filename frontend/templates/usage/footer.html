@@ -1,0 +1,41 @@
+{% macro usage_footer(requests, label='Interaction') %}
+{% set totals = summarize_usage(requests) %}
+<footer class="usage-footer">
+  <span class="usage-cost">{{ 'Reported cost' if totals.partial else 'Cost' }}: {{ totals.cost_usd | cost }}{% if totals.cost_usd is not none %} USD{% endif %}</span>
+  <span class="usage-cache">Cached input: {{ ('%.1f%%' | format(totals.cache_percent)) if totals.cache_percent is not none else 'Unavailable' }}</span>
+  <button type="button" class="usage-details-button secondary-button" aria-haspopup="dialog" aria-label="{{ label }} cost details">Details</button>
+  <template class="usage-template">
+    <div class="setup-heading">
+      <h2 id="usage-dialog-title">{{ label }} — cost details</h2>
+      <button type="button" class="secondary-button" data-close-dialog aria-label="Close cost details">Close</button>
+    </div>
+    {% if requests %}
+    <p>{{ 'Reported cost' if totals.partial else 'Total cost' }}: <strong>{{ totals.cost_usd | cost }}{% if totals.cost_usd is not none %} USD{% endif %}</strong></p>
+    <div class="usage-table-container" tabindex="0" role="region" aria-label="Request usage">
+      <table class="usage-table">
+        <thead><tr><th scope="col">Request</th><th scope="col">Cost (USD)</th><th scope="col">Input</th><th scope="col">Cached input</th><th scope="col">Cache writes</th><th scope="col">Output (total)</th><th scope="col">Reasoning</th><th scope="col">Other output</th><th scope="col">Total tokens</th></tr></thead>
+        <tbody>
+          {% for request in requests %}
+          {% set row = summarize_usage([request]) %}
+          <tr>
+            <th scope="row">{{ loop.index }}. {{ phase_labels.get(request.phase, 'Request') }}<span class="usage-model">{{ model_label(request.model, request.reasoning_effort) }}</span>{% if request.status != 'complete' %}<span class="usage-status">{{ request.status | capitalize }}</span>{% endif %}</th>
+            <td>{{ row.cost_usd | cost }}</td>
+            <td>{{ row.input_tokens | tokens }}</td>
+            <td>{{ row.cached_tokens | tokens }}{% if row.cache_percent is not none %}<span class="usage-subvalue">{{ '%.1f%%' | format(row.cache_percent) }}</span>{% endif %}</td>
+            <td>{{ row.cache_write_tokens | tokens }}</td>
+            <td>{{ row.output_tokens | tokens }}</td>
+            <td>{{ row.reasoning_tokens | tokens }}</td>
+            <td>{{ row.other_output_tokens | tokens }}</td>
+            <td>{{ row.total_tokens | tokens }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="usage-note">Cached input is included in input tokens. Reasoning is included in output tokens. — means unreported.{% if totals.partial %} Some request costs are unavailable; the displayed cost is a subtotal.{% endif %}</p>
+    {% else %}
+    <p>Usage was not recorded for this response.</p>
+    {% endif %}
+  </template>
+</footer>
+{% endmacro %}

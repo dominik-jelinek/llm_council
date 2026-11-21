@@ -1,0 +1,41 @@
+{% from "setup/fields.html" import effort_select, member_row %}
+<div id="council-settings">
+  <div class="setup-heading">
+    <h2 id="council-setup-title">Setup Council</h2>
+    <a href="/" class="secondary-button" data-close-dialog aria-label="Close council setup">Close</a>
+  </div>
+  {% if saved %}<p class="setup-success" role="status">Council saved. New requests will use these settings.</p>{% endif %}
+  {% if errors %}
+  <div class="setup-error" role="alert"><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>
+  {% endif %}
+  <form action="/council/setup" method="post" hx-post="/council/setup"
+        hx-target="#council-settings" hx-swap="outerHTML" hx-disabled-elt="find button">
+    <fieldset>
+      <legend>Council members</legend>
+      <div id="council-members">
+        {% for model, effort in values.members %}{{ member_row(model, effort, efforts) }}{% endfor %}
+      </div>
+      <button type="button" class="secondary-button" id="add-member">+ Add model</button>
+      <template id="member-template">{{ member_row('', none, efforts) }}</template>
+    </fieldset>
+    <fieldset>
+      <legend>Chairman</legend>
+      <div class="model-settings-row">
+        <label>Model ID
+          <input name="chairman_model" value="{{ values.chairman[0] }}" required autocomplete="off" spellcheck="false" placeholder="provider/model">
+        </label>
+        {{ effort_select('chairman_effort', values.chairman[1], efforts) }}
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Title generation</legend>
+      <div class="model-settings-row">
+        <label>Model ID
+          <input name="title_model" value="{{ values.title_model[0] }}" required autocomplete="off" spellcheck="false" placeholder="provider/model">
+        </label>
+        {{ effort_select('title_effort', values.title_model[1], efforts) }}
+      </div>
+    </fieldset>
+    <div class="setup-actions"><button type="submit" class="send-button">Save Council</button></div>
+  </form>
+</div>

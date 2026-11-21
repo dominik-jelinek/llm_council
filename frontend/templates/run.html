@@ -1,0 +1,25 @@
+<article class="message-group live-run" id="run-{{ run.id }}"
+         hx-ext="sse" sse-connect="/runs/{{ run.id }}/events?after={{ run.events | length }}" sse-close="done"
+         {% if not run_visible %}hidden{% endif %}>
+  <div class="assistant-message">
+    <div class="message-label">{{ 'LLM Council' if run.council_enabled else 'Chairman' }}</div>
+    {% set message = run.result %}
+    {% set message_id = run.id %}
+    {% set metadata = message.metadata %}
+    {% for stage in ['stage1', 'stage2', 'stage3'] %}
+    <div sse-swap="{{ stage }}" hx-swap="innerHTML">
+      {% if run.loading_stage == stage %}
+        {% include "stages/loading.html" %}
+      {% else %}
+        {% include 'stages/' ~ stage ~ '.html' %}
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% with requests = run.result.requests %}{% include "usage/interaction.html" %}{% endwith %}
+  </div>
+  <div id="run-status-{{ run.id }}" class="run-status" role="status">
+    <div class="loading-indicator"><span class="spinner" aria-hidden="true"></span>{{ 'Consulting the council...' if run.council_enabled else 'Asking the chairman...' }}</div>
+    <p class="connection-status" hidden>Connection interrupted. Reconnecting; your response is still running.</p>
+  </div>
+  <div sse-swap="controls" hx-swap="none"></div>
+</article>

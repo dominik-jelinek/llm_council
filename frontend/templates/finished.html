@@ -1,0 +1,5 @@
+{% with oob = true %}
+  {% include "composer.html" %}
+  {% include "sidebar.html" %}
+{% endwith %}
+<div id="run-status-{{ run_id }}" hx-swap-oob="innerHTML"></div>

@@ -1,0 +1,13 @@
+<form class="edit-message-form" action="/conversations/{{ conversation.id }}/messages/{{ message.id }}/edit" method="post"
+      hx-post="/conversations/{{ conversation.id }}/messages/{{ message.id }}/edit"
+      hx-target="#workspace" hx-swap="outerHTML" hx-disabled-elt="find button, find textarea">
+  <label class="sr-only" for="edit-content-{{ message.id }}">Edit your message</label>
+  <textarea id="edit-content-{{ message.id }}" class="message-input edit-content" name="content" rows="5" required>{{ message.content }}</textarea>
+  <div id="edit-error-{{ message.id }}" role="alert"></div>
+  <div class="edit-actions">
+    <a class="secondary-button" href="/conversations/{{ conversation.id }}/messages/{{ message.id }}"
+       hx-get="/conversations/{{ conversation.id }}/messages/{{ message.id }}"
+       hx-target="closest article" hx-swap="outerHTML" hx-disabled-elt="this">Cancel</a>
+    <button type="submit" class="send-button" {% if busy %}disabled{% endif %}>Save &amp; send</button>
+  </div>
+</form>

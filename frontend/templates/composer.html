@@ -1,0 +1,33 @@
+<div id="composer" data-busy="{{ 'true' if busy else 'false' }}" {% if oob %}hx-swap-oob="outerHTML"{% endif %}>
+  <div id="request-error" role="alert">{% if error %}{% include "notice.html" %}{% endif %}</div>
+  {% if busy and not run_visible %}<p class="loading-indicator" role="status">A response is running on another branch.</p>{% endif %}
+  {% if pending and not busy %}
+  <form class="retry-form" action="/conversations/{{ conversation.id }}/retry" method="post"
+        hx-post="/conversations/{{ conversation.id }}/retry" hx-target="#workspace" hx-swap="outerHTML" hx-disabled-elt="find button">
+    <span>The last user message has no saved response yet.</span>
+    <button type="submit" class="send-button">Retry</button>
+  </form>
+  {% endif %}
+  {% set message_url = '/conversations/' ~ conversation.id ~ '/messages' if conversation else '/conversations/messages' %}
+  <form class="input-form" action="{{ message_url }}" method="post"
+        data-draft-key="{{ conversation.id if conversation else ('new:' ~ project.id if project else 'new') }}"
+        hx-post="{{ message_url }}" hx-target="{{ '#messages' if conversation else '#workspace' }}"
+        hx-swap="{{ 'beforeend' if conversation else 'outerHTML' }}"
+        hx-disabled-elt="find button, find textarea, find input">
+    {% if not conversation and project %}<input type="hidden" name="project_id" value="{{ project.id }}">{% endif %}
+    <label class="sr-only" for="message-input">Your message</label>
+    <textarea id="message-input" name="content" class="message-input" rows="1" required
+              aria-describedby="input-hint" {% if busy or pending %}disabled{% endif %}
+              placeholder="{{ 'Ask a follow-up...' if messages else 'Ask your question...' }}"></textarea>
+    <div class="composer-options">
+      <label class="council-switch">
+        <input id="council-enabled" type="checkbox" role="switch" name="council_enabled" value="true"
+               {% if council_enabled %}checked{% endif %} {% if busy or pending %}disabled{% endif %}>
+        <span class="switch-track" aria-hidden="true"></span>
+        <span>Council <span class="switch-on" aria-hidden="true">On</span><span class="switch-off" aria-hidden="true">Off</span></span>
+      </label>
+      <button type="submit" class="send-button" {% if busy or pending %}disabled{% endif %}>Send</button>
+    </div>
+    <p id="input-hint" class="sr-only">Enter to send · Shift+Enter for a new line</p>
+  </form>
+</div>

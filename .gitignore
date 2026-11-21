@@ -11,6 +11,10 @@ wheels/
 
 # Keys and secrets
 .env
+.env.*
+!.env.example
+credentials.json
+*.tmp
 
 # Data files
 data/

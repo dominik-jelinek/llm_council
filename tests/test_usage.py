@@ -11,7 +11,12 @@ import httpx
 from backend import council
 from backend.main import create_app
 from backend.usage import format_cost, normalize_usage, summarize_usage
-from tests.fixtures import CONFIGURATION, accounted_reply, parallel_reply, single_reply
+from tests.fixtures import (
+    accounted_reply,
+    configure_test_app,
+    parallel_reply,
+    single_reply,
+)
 
 
 class UsageTotalsTests(unittest.TestCase):
@@ -96,7 +101,7 @@ class UsageRunTests(unittest.IsolatedAsyncioTestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.app = create_app(self.directory.name)
-        self.app.state.council_settings.save(CONFIGURATION)
+        configure_test_app(self.app)
         self.runs = self.app.state.runs
         self.store = self.app.state.store
         self.conversation_id = self.store.create()["id"]

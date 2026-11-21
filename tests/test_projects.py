@@ -9,7 +9,7 @@ import httpx
 
 from backend import council
 from backend.main import create_app
-from tests.fixtures import CONFIGURATION, parallel_reply, single_reply
+from tests.fixtures import CONFIGURATION, configure_test_app, parallel_reply, single_reply
 
 
 class ProjectTests(unittest.IsolatedAsyncioTestCase):
@@ -17,7 +17,7 @@ class ProjectTests(unittest.IsolatedAsyncioTestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.app = create_app(self.directory.name)
-        self.app.state.council_settings.save(CONFIGURATION)
+        configure_test_app(self.app)
         self.runs = self.app.state.runs
         self.store = self.app.state.store
         self.projects = self.app.state.projects

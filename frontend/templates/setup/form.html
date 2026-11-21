@@ -1,15 +1,22 @@
 {% from "setup/fields.html" import effort_select, member_row %}
 <div id="council-settings">
   <div class="setup-heading">
-    <h2 id="council-setup-title">Setup Council</h2>
-    <a href="/" class="secondary-button" data-close-dialog aria-label="Close council setup">Close</a>
+    <h2 id="council-setup-title">Setup</h2>
+    <a href="/" class="secondary-button" data-close-dialog aria-label="Close setup">Close</a>
   </div>
-  {% if saved %}<p class="setup-success" role="status">Council saved. New requests will use these settings.</p>{% endif %}
+  {% if saved %}<p class="setup-success" role="status">Settings saved. New requests will use these settings.</p>{% endif %}
   {% if errors %}
   <div class="setup-error" role="alert"><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>
   {% endif %}
   <form action="/council/setup" method="post" hx-post="/council/setup"
         hx-target="#council-settings" hx-swap="outerHTML" hx-disabled-elt="find button">
+    <fieldset>
+      <legend>OpenRouter</legend>
+      <label>API key
+        <input type="password" name="openrouter_api_key" autocomplete="new-password" spellcheck="false"
+               placeholder="{{ 'Key configured — leave blank to keep it' if key_configured else 'Enter your OpenRouter API key' }}">
+      </label>
+    </fieldset>
     <fieldset>
       <legend>Council members</legend>
       <div id="council-members">
@@ -36,6 +43,6 @@
         {{ effort_select('title_effort', values.title_model[1], efforts) }}
       </div>
     </fieldset>
-    <div class="setup-actions"><button type="submit" class="send-button">Save Council</button></div>
+    <div class="setup-actions"><button type="submit" class="send-button">Save settings</button></div>
   </form>
 </div>

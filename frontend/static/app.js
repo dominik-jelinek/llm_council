@@ -153,9 +153,9 @@
   }, true);
 
   document.addEventListener('htmx:beforeRequest', (event) => {
-    const error = document.querySelector('#request-error');
-    if (error) error.replaceChildren();
     if (event.detail.elt.matches('.input-form, .retry-form')) {
+      const error = document.querySelector('#request-error');
+      if (error) error.replaceChildren();
       focusedMessage = null;
       followLatest = true;
     }

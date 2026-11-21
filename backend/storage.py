@@ -124,3 +124,10 @@ class ConversationStore:
             raise ValueError("Conversation not found")
         conversation.setdefault("request_usage", {})[message_id] = requests
         self.save(conversation)
+
+    def set_message_error(self, conversation_id: str, message_id: str, error: dict) -> None:
+        conversation = self.get(conversation_id)
+        if conversation is None:
+            raise ValueError("Conversation not found")
+        conversation["message_nodes"][message_id]["last_error"] = error
+        self.save(conversation)

@@ -12,7 +12,7 @@ import httpx
 from backend import branches, council
 from backend.main import create_app
 from backend.runs import RunError
-from tests.fixtures import CONFIGURATION, parallel_reply, single_reply
+from tests.fixtures import configure_test_app, parallel_reply, single_reply
 
 
 class BranchTests(unittest.IsolatedAsyncioTestCase):
@@ -20,7 +20,7 @@ class BranchTests(unittest.IsolatedAsyncioTestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.app = create_app(self.directory.name)
-        self.app.state.council_settings.save(CONFIGURATION)
+        configure_test_app(self.app)
         self.store = self.app.state.store
         self.runs = self.app.state.runs
         self.conversation_id = self.store.create()["id"]
@@ -234,7 +234,7 @@ class BranchTests(unittest.IsolatedAsyncioTestCase):
         original = await self.turn("Original")
         saved = self.saved()
         with patch("backend.persistence.os.replace", side_effect=OSError("Disk failure")):
-            with self.assertRaises(OSError):
+            with self.assertRaisesRegex(RunError, "question could not be saved"):
                 self.runs.start(self.conversation_id, "Edited", edit_message_id=original.message_id)
         self.app.state.council_settings.path.write_text("{invalid")
         with self.assertRaises(RunError):

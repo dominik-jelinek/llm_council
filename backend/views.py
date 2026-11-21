@@ -31,6 +31,8 @@ def context(
     project_ids = {project["id"] for project in projects}
     selected_project_id = conversation.get("project_id") if conversation else project_id
     project = next((item for item in projects if item["id"] == selected_project_id), None)
+    pending = bool(messages and messages[-1]["role"] == "user")
+    error = last_question.get("last_error", {}) if pending and run is None else {}
     return {
         "conversation": conversation,
         "conversations": conversations,
@@ -50,7 +52,9 @@ def context(
         "run_visible": run_visible,
         "branch_navigation": branches.navigation(conversation) if conversation else {},
         "busy": run is not None,
-        "pending": bool(messages and messages[-1]["role"] == "user"),
+        "pending": pending,
+        "error": error.get("message"),
+        "setup_required": error.get("setup_required", False),
         "council_enabled": last_question.get("council_enabled", True),
     }
 
@@ -231,7 +235,7 @@ async def run_events(run_id: str, request: Request, runs: Runs, after: int = 0):
                     message["id"] == run.message_id for message in state["messages"]
                 ):
                     error = "A response on another branch failed. Switch back to retry it."
-                state.update(error=error)
+                state.update(error=error, setup_required=event.get("setup_required", False))
                 html = render("finished.html", **state, run_id=run.id)
             yield encode_event(html, event=name, event_id=sequence)
         yield encode_event("", event="done")

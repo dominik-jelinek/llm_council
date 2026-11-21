@@ -1,6 +1,7 @@
 """Deterministic model responses; tests never call OpenRouter."""
 
 from backend.config import CouncilConfig
+from backend.credentials import OpenRouterCredentials
 from backend.usage import begin_request, finish_request, normalize_usage
 
 MODELS = ["example/alpha", "example/beta"]
@@ -10,6 +11,13 @@ CONFIGURATION = CouncilConfig(
     chairman=("example/chairman", None),
     title_model=("example/title", None),
 )
+
+
+def configure_test_app(app):
+    app.state.council_settings.save(CONFIGURATION)
+    app.state.runs.credentials.save(OpenRouterCredentials(openrouter_api_key="test-api-key"))
+
+
 RESPONSES = {
     MODELS[0]: {
         "content": "## Alpha answer\n\nA useful explanation.\n\n```python\nprint('hello')\n```"

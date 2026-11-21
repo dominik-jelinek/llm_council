@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -9,7 +10,10 @@ import httpx
 from openrouter import OpenRouter
 
 from backend import openrouter
-from backend.config import Settings
+from backend.config import Settings, get_settings
+from backend.credentials import OpenRouterCredentials
+from backend.failures import ProviderError
+from backend.main import create_app
 from backend.usage import track_requests
 
 
@@ -67,12 +71,11 @@ class OpenRouterTests(unittest.IsolatedAsyncioTestCase):
                 with (
                     patch.object(openrouter, "get_settings", return_value=settings),
                     patch.object(openrouter, "OpenRouter") as client,
-                    self.assertLogs("backend.openrouter", level="ERROR") as logs,
+                    self.assertRaises(ProviderError) as error,
                 ):
-                    response = await openrouter.query_model(("example/model", None), [])
-                self.assertIsNone(response)
+                    await openrouter.query_model(("example/model", None), [])
+                self.assertEqual(error.exception.code, "missing_key")
                 client.assert_not_called()
-                self.assertIn("OPENROUTER_API_KEY is not configured", logs.output[0])
 
     async def test_sdk_sends_key_payload_and_timeout_without_overriding_default_reasoning(self):
         messages = [{"role": "user", "content": "Question"}]
@@ -129,7 +132,12 @@ class OpenRouterTests(unittest.IsolatedAsyncioTestCase):
                 records = []
                 changed = []
                 with track_requests(records, lambda: changed.append(True), "attempt-1"):
-                    result = await openrouter.query_model(("example/model", "high"), [])
+                    if content.strip():
+                        result = await openrouter.query_model(("example/model", "high"), [])
+                    else:
+                        with self.assertRaises(ProviderError) as error:
+                            await openrouter.query_model(("example/model", "high"), [])
+                        self.assertEqual(error.exception.code, "empty")
                 self.assertEqual(len(records), 1)
                 self.assertEqual(len(changed), 1)
                 record = records[0]
@@ -143,8 +151,8 @@ class OpenRouterTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(result["request"], record)
                     self.assertEqual(record["status"], "complete")
                 else:
-                    self.assertIsNone(result)
                     self.assertEqual(record["status"], "failed")
+                    self.assertEqual(record["error"]["code"], "empty")
 
     async def test_sdk_errors_malformed_and_empty_responses_are_isolated_without_retries(self):
         for response in (
@@ -156,16 +164,23 @@ class OpenRouterTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(status=response.status_code, body=response.text):
                 self.response = response
                 before = len(self.requests)
-                with self.assertLogs("backend.openrouter", level="WARNING"):
-                    self.assertIsNone(await openrouter.query_model(("example/model", None), []))
+                with (
+                    self.assertLogs("backend.openrouter", level="WARNING"),
+                    self.assertRaises(ProviderError),
+                ):
+                    await openrouter.query_model(("example/model", None), [])
                 self.assertEqual(len(self.requests), before + 1)
 
     async def test_transport_timeout_fails_but_task_cancellation_propagates(self):
         with patch.object(
             self.http_client, "send", AsyncMock(side_effect=httpx.ReadTimeout("timeout"))
         ):
-            with self.assertLogs("backend.openrouter", level="WARNING"):
-                self.assertIsNone(await openrouter.query_model(("example/model", None), []))
+            with (
+                self.assertLogs("backend.openrouter", level="WARNING"),
+                self.assertRaises(ProviderError) as error,
+            ):
+                await openrouter.query_model(("example/model", None), [])
+            self.assertEqual(error.exception.code, "timeout")
         with patch.object(self.http_client, "send", AsyncMock(side_effect=asyncio.CancelledError)):
             with self.assertRaises(asyncio.CancelledError):
                 await openrouter.query_model(("example/model", None), [])
@@ -179,6 +194,98 @@ class OpenRouterTests(unittest.IsolatedAsyncioTestCase):
             {json.loads(request.content)["reasoning"]["effort"] for request in self.requests},
             {"low", "high"},
         )
+
+    async def test_app_credentials_reach_sdk_for_both_answer_and_title(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = create_app(directory)
+            app.state.runs.credentials.save(
+                OpenRouterCredentials(openrouter_api_key="saved-ui-key")
+            )
+            with patch.object(openrouter, "get_settings", side_effect=get_settings):
+                run = app.state.runs.start(None, "Question", council_enabled=False)
+                await run.task
+            self.assertIsNone(run.error)
+            self.assertEqual(len(self.requests), 2)
+            self.assertTrue(
+                all(
+                    request.headers["Authorization"] == "Bearer saved-ui-key"
+                    for request in self.requests
+                )
+            )
+            await app.state.runs.close()
+
+    async def test_provider_error_cannot_echo_api_key_into_logs(self):
+        self.response = httpx.Response(
+            401, json={"error": {"code": 401, "message": "Rejected token: sdk-test-key"}}
+        )
+        with (
+            self.assertLogs("backend.openrouter", level="WARNING") as logs,
+            self.assertRaises(ProviderError) as error,
+        ):
+            await openrouter.query_model(("example/model", None), [])
+        self.assertEqual(error.exception.code, "authentication")
+        self.assertNotIn("sdk-test-key", str(error.exception))
+        self.assertNotIn("sdk-test-key", "\n".join(logs.output))
+        self.assertNotIn("Rejected token", "\n".join(logs.output))
+
+    async def test_provider_failures_have_actionable_categories_and_safe_usage_details(self):
+        for status, code in (
+            (400, "request"),
+            (401, "authentication"),
+            (402, "credits"),
+            (403, "access"),
+            (404, "model"),
+            (408, "timeout"),
+            (422, "request"),
+            (429, "rate_limit"),
+            (503, "unavailable"),
+            (504, "timeout"),
+        ):
+            with self.subTest(status=status):
+                self.response = httpx.Response(
+                    status, json={"error": {"code": status, "message": "Private provider body"}}
+                )
+                records = []
+                with (
+                    track_requests(records, lambda: None, "attempt-1"),
+                    self.assertLogs("backend.openrouter", level="WARNING"),
+                    self.assertRaises(ProviderError) as error,
+                ):
+                    await openrouter.query_model(("example/model", None), [])
+                self.assertEqual(error.exception.code, code)
+                self.assertEqual(records[0]["status"], "failed")
+                self.assertEqual(records[0]["error"], error.exception.as_dict())
+                self.assertNotIn("Private provider body", json.dumps(records))
+
+    async def test_connection_failure_is_reported_as_network_error(self):
+        with (
+            patch.object(
+                self.http_client, "send", AsyncMock(side_effect=httpx.ConnectError("offline"))
+            ),
+            self.assertRaises(ProviderError) as error,
+        ):
+            await openrouter.query_model(("example/model", None), [])
+        self.assertEqual(error.exception.code, "network")
+
+    async def test_parallel_failure_preserves_success_and_all_failures_remain_actionable(self):
+        members = [("example/one", None), ("example/two", None)]
+        with patch.object(
+            openrouter,
+            "query_model",
+            AsyncMock(side_effect=[ProviderError("model"), {"content": "Answer"}]),
+        ):
+            results = await openrouter.query_models_parallel(members, [])
+        self.assertEqual(results, [(members[0], None), (members[1], {"content": "Answer"})])
+        with (
+            patch.object(
+                openrouter,
+                "query_model",
+                AsyncMock(side_effect=[ProviderError("model"), ProviderError("authentication")]),
+            ),
+            self.assertRaises(ProviderError) as error,
+        ):
+            await openrouter.query_models_parallel(members, [])
+        self.assertEqual(error.exception.code, "authentication")
 
 
 if __name__ == "__main__":

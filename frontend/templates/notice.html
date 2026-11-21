@@ -1,1 +1,3 @@
-<p class="error-notice">{{ error }}</p>
+<p class="error-notice">{{ error }}
+  {% if setup_required %}<a href="/council/setup" hx-get="/council/setup" hx-target="#council-settings" hx-swap="outerHTML" aria-haspopup="dialog">Open Setup</a>{% endif %}
+</p>

@@ -26,7 +26,7 @@ async def completed_result(run: Run):
             raise RunError("Conversation deleted.", 404) from None
         raise
     if run.error:
-        raise RunError(run.error, 502)
+        raise RunError(run.error, 502, setup_required=run.error_setup_required)
     return run.result
 
 

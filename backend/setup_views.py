@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
 
 from backend.config import CouncilConfig, ReasoningEffort
+from backend.credentials import OpenRouterCredentials
 from backend.dependencies import Runs
 from backend.rendering import render
 
@@ -18,17 +19,28 @@ logger = logging.getLogger(__name__)
 
 def setup_response(request: Request, values: dict, *, errors=(), saved=False, status_code=200):
     partial = request.headers.get("HX-Request") == "true"
+    key_configured = False
+    try:
+        key = request.app.state.runs.credentials.get().openrouter_api_key
+        key_configured = bool(key and key.get_secret_value().strip())
+    except (ValueError, OSError):
+        errors = [*errors, "Saved API key could not be read. Enter it again to replace it."]
     return HTMLResponse(
         render(
             "setup/form.html" if partial else "setup/page.html",
             values=values,
             errors=errors,
             saved=saved,
+            key_configured=key_configured,
             efforts=get_args(ReasoningEffort),
             standalone_setup=not partial,
         ),
         status_code=status_code,
-        headers={"HX-Retarget": "#council-settings", "HX-Reswap": "outerHTML"},
+        headers={
+            "HX-Retarget": "#council-settings",
+            "HX-Reswap": "outerHTML",
+            "Cache-Control": "no-store",
+        },
     )
 
 
@@ -59,6 +71,20 @@ async def save_council_setup(request: Request, runs: Runs):
         "chairman": (form.get("chairman_model", ""), form.get("chairman_effort") or None),
         "title_model": (form.get("title_model", ""), form.get("title_effort") or None),
     }
+    credentials = None
+    api_key = form.get("openrouter_api_key", "")
+    if isinstance(api_key, str):
+        api_key = api_key.strip()
+    if api_key:
+        try:
+            credentials = OpenRouterCredentials(openrouter_api_key=api_key)
+        except ValidationError:
+            return setup_response(
+                request,
+                values,
+                errors=["Enter an API key without spaces or line breaks."],
+                status_code=422,
+            )
     if len(models) != len(efforts):
         return setup_response(
             request,
@@ -96,4 +122,17 @@ async def save_council_setup(request: Request, runs: Runs):
             ],
             status_code=500,
         )
+    if credentials is not None:
+        try:
+            runs.credentials.save(credentials)
+        except OSError:
+            logger.error("Could not save OpenRouter API key")
+            return setup_response(
+                request,
+                configuration.model_dump(),
+                errors=[
+                    "Council settings saved, but the API key could not be saved. Please try again."
+                ],
+                status_code=500,
+            )
     return setup_response(request, configuration.model_dump(), saved=True)

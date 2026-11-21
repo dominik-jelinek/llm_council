@@ -1,15 +1,17 @@
 """Configuration for the LLM Council."""
 
-from functools import lru_cache
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Environment overrides the project's .env; secrets stay masked in reprs."""
+    """Explicit UI values override environment and .env; secrets stay masked."""
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parent.parent / ".env",
@@ -19,11 +21,33 @@ class Settings(BaseSettings):
 
     # Optional so saved conversations remain accessible without provider credentials.
     openrouter_api_key: SecretStr | None = None
+    data_dir: Path = Path("data/conversations")
+    host: str = "127.0.0.1"
+    port: int = Field(default=8001, ge=1, le=65535)
+
+    @field_validator("data_dir", mode="before")
+    @classmethod
+    def normalize_data_dir(cls, value: str | Path) -> Path:
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("DATA_DIR must not be empty.")
+        return Path(value).expanduser().resolve()
 
 
-@lru_cache
+_active_settings: ContextVar[Settings | None] = ContextVar("active_settings", default=None)
+
+
 def get_settings() -> Settings:
-    return Settings()
+    return _active_settings.get() or Settings()
+
+
+@contextmanager
+def use_settings(settings: Settings) -> Iterator[None]:
+    """Keep a run and its parallel requests on the same credentials."""
+    token = _active_settings.set(settings)
+    try:
+        yield
+    finally:
+        _active_settings.reset(token)
 
 
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
@@ -48,9 +72,6 @@ CHAIRMAN_MODEL: ModelSpec = ("anthropic/claude-fable-5.2", None)
 
 # Fast title generation uses the same SDK and model configuration format.
 TITLE_MODEL: ModelSpec = ("google/gemini-4-neon", None)
-
-# Data directory for conversation storage
-DATA_DIR = "data/conversations"
 
 
 class CouncilConfig(BaseModel):

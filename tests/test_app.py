@@ -16,7 +16,14 @@ from backend.rendering import render, render_markdown
 from backend.runs import RunError
 from backend.storage import ConversationStore
 from backend.usage import begin_request, finish_request
-from tests.fixtures import CONFIGURATION, COUNCIL_MEMBERS, MODELS, parallel_reply, single_reply
+from tests.fixtures import (
+    CONFIGURATION,
+    COUNCIL_MEMBERS,
+    MODELS,
+    configure_test_app,
+    parallel_reply,
+    single_reply,
+)
 
 
 class AppTests(unittest.IsolatedAsyncioTestCase):
@@ -24,7 +31,7 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.app = create_app(self.directory.name)
-        self.app.state.council_settings.save(CONFIGURATION)
+        configure_test_app(self.app)
         self.runs = self.app.state.runs
         self.store = self.app.state.store
         self.conversation_id = self.store.create()["id"]

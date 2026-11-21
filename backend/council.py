@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from backend.config import CouncilConfig, ModelSpec, model_label
+from backend.failures import ProviderError
 from backend.openrouter import query_model, query_models_parallel
 from backend.usage import request_phase
 
@@ -142,7 +143,11 @@ Now provide your evaluation and ranking:"""
 
     # Get rankings from all council models in parallel
     with request_phase("stage2"):
-        responses = await query_models_parallel(models, messages)
+        try:
+            responses = await query_models_parallel(models, messages)
+        except ProviderError:
+            # The chairman can still use the answers when peer evaluations fail.
+            responses = [(model, None) for model in models]
 
     # Format results
     stage2_results = []
@@ -403,7 +408,10 @@ Title:"""
     messages = [{"role": "user", "content": title_prompt}]
 
     with request_phase("title"):
-        response = await query_model(model, messages, timeout=30.0)
+        try:
+            response = await query_model(model, messages, timeout=30.0)
+        except ProviderError:
+            return "New Conversation"
 
     if response is None:
         # Fallback to a generic title

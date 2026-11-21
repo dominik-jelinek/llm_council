@@ -62,7 +62,7 @@ async def edit_message(
         if request.headers.get("HX-Request") != "true":
             raise
         return HTMLResponse(
-            render("notice.html", error=str(error)),
+            render("notice.html", error=str(error), setup_required=error.setup_required),
             status_code=error.status_code,
             headers={
                 "HX-Retarget": f"#edit-error-{message_id}",

@@ -17,24 +17,26 @@ import uvicorn
 from playwright.sync_api import expect, sync_playwright
 
 from backend import council
+from backend.failures import ProviderError
 from backend.main import create_app
+from tests.browser_failures import check_failures
 from tests.browser_projects import check_projects
 from tests.browser_sidebar import check_sidebar_scroll
 from tests.fixtures import (
-    CONFIGURATION,
     MODELS,
     RANKINGS,
     RESPONSES,
+    configure_test_app,
     parallel_reply,
     single_reply,
 )
 
 
 def check_composer(page):
-    setup = page.get_by_role("button", name="Setup Council").bounding_box()
+    setup = page.get_by_role("button", name="Setup").bounding_box()
     new_button = page.get_by_role("button", name="+ New Conversation").bounding_box()
     assert setup["y"] + setup["height"] <= new_button["y"]
-    assert page.locator("#sidebar").get_by_role("button", name="Setup Council").count() == 1
+    assert page.locator("#sidebar").get_by_role("button", name="Setup").count() == 1
     input_box = page.locator("#message-input")
     input_box.fill("")
     initial = input_box.bounding_box()
@@ -81,7 +83,7 @@ def main():
         if prompt == "Fail once" and failures == 0:
             failures += 1
             await asyncio.sleep(0.15)
-            return [(model, None) for model in models]
+            raise ProviderError("authentication")
         await asyncio.sleep(1.0 if "FINAL RANKING:" in prompt else 0.3)
         return await parallel_reply(models, messages)
 
@@ -95,7 +97,7 @@ def main():
         patch.object(council, "query_model", delayed_single),
     ):
         app = create_app(directory)
-        app.state.council_settings.save(CONFIGURATION)
+        configure_test_app(app)
         server = uvicorn.Server(uvicorn.Config(app, log_level="critical"))
         listener = socket.socket()
         listener.bind(("127.0.0.1", 0))
@@ -113,6 +115,7 @@ def main():
                 browser = playwright.chromium.launch(
                     **({"executable_path": executable} if executable else {})
                 )
+                check_failures(browser, base_url, app, model_calls)
                 context = browser.new_context(
                     viewport={"width": 1440, "height": 1050},
                     permissions=["clipboard-read", "clipboard-write"],
@@ -461,8 +464,17 @@ def main():
                 page.locator("#message-input").fill("Fail once")
                 page.locator("#message-input").press("Enter")
                 expect(page.get_by_role("button", name="Retry", exact=True)).to_be_visible()
-                expect(page.locator("#request-error")).to_contain_text("None of the council models")
+                expect(page.locator("#request-error")).to_contain_text("rejected the API key")
                 expect(page.locator(".stage-loading")).to_have_count(0)
+                page.reload()
+                expect(page.locator("#request-error")).to_contain_text("rejected the API key")
+                page.get_by_role("link", name="Open Setup").click()
+                recovery = page.get_by_role("dialog", name="Setup")
+                expect(recovery).to_be_visible()
+                recovery.get_by_label("API key", exact=True).fill("browser-replacement-key")
+                recovery.get_by_role("button", name="Save settings", exact=True).click()
+                expect(recovery.get_by_role("status")).to_contain_text("Settings saved")
+                recovery.get_by_role("link", name="Close setup").click()
                 page.get_by_role("button", name="Retry", exact=True).click()
                 expect(page.locator(".stage3")).to_have_count(1)
                 expect(page.locator("#message-input")).to_be_enabled()
@@ -470,9 +482,12 @@ def main():
                 expect(page.locator(".assistant-message")).to_have_count(1)
                 print("PASS: visible failure and retry without duplicate messages", flush=True)
 
-                page.get_by_role("button", name="Setup Council").click()
-                dialog = page.get_by_role("dialog", name="Setup Council")
+                page.get_by_role("button", name="Setup").click()
+                dialog = page.get_by_role("dialog", name="Setup")
                 expect(dialog).to_be_visible()
+                api_key = dialog.get_by_label("API key", exact=True)
+                expect(api_key).to_have_attribute("type", "password")
+                api_key.fill("browser-test-openrouter-key")
                 models = dialog.locator('input[name="member_model"]')
                 efforts = dialog.locator('select[name="member_effort"]')
                 expect(models).to_have_count(2)
@@ -485,14 +500,30 @@ def main():
                 efforts.nth(0).select_option("high")
                 efforts.nth(1).select_option("high")
                 dialog.locator('select[name="chairman_effort"]').select_option("medium")
-                dialog.get_by_role("button", name="Save Council").click()
-                expect(dialog.get_by_role("status")).to_contain_text("Council saved")
-                dialog.get_by_role("link", name="Close council setup").click()
+                dialog.get_by_role("button", name="Save settings").click()
+                expect(dialog.get_by_role("status")).to_contain_text("Settings saved")
+                expect(api_key).to_have_value("")
+                expect(api_key).to_have_attribute(
+                    "placeholder", "Key configured — leave blank to keep it"
+                )
+                assert (
+                    app.state.runs.credentials.get().openrouter_api_key.get_secret_value()
+                    == "browser-test-openrouter-key"
+                )
+                assert "browser-test-openrouter-key" not in page.content()
+                assert not page.evaluate(
+                    "JSON.stringify([localStorage, sessionStorage]).includes('browser-test-openrouter-key')"
+                )
+                dialog.get_by_role("link", name="Close setup").click()
                 expect(dialog).not_to_be_visible()
                 page.reload()
-                page.get_by_role("button", name="Setup Council").click()
+                page.get_by_role("button", name="Setup").click()
                 expect(dialog).to_be_visible()
                 expect(models.nth(1)).to_have_value(MODELS[0])
+                expect(api_key).to_have_value("")
+                expect(api_key).to_have_attribute(
+                    "placeholder", "Key configured — leave blank to keep it"
+                )
                 expect(efforts.nth(0)).to_have_value("high")
                 expect(efforts.nth(1)).to_have_value("high")
                 expect(dialog.locator('select[name="chairman_effort"]')).to_have_value("medium")
@@ -515,7 +546,7 @@ def main():
                 expect(page.locator(".chairman-label")).to_contain_text("chairman (medium)")
                 expect(page.locator(".aggregate-item")).to_have_count(2)
                 print(
-                    "PASS: Setup Council edits, durable preferences, independent duplicate members",
+                    "PASS: Setup edits, durable preferences, independent duplicate members",
                     flush=True,
                 )
 
@@ -539,12 +570,12 @@ def main():
                 assert not page.evaluate("document.documentElement.scrollWidth > window.innerWidth")
                 page.screenshot(path="/tmp/llm-council-usage-mobile.png")
                 usage_dialog.get_by_role("button", name="Close cost details").click()
-                page.get_by_role("button", name="Setup Council").click()
+                page.get_by_role("button", name="Setup").click()
                 expect(dialog).to_be_visible()
-                expect(dialog.get_by_role("button", name="Save Council")).to_be_enabled()
+                expect(dialog.get_by_role("button", name="Save settings")).to_be_enabled()
                 assert not dialog.evaluate("element => element.scrollWidth > element.clientWidth")
                 page.screenshot(path="/tmp/llm-council-setup-mobile.png")
-                dialog.get_by_role("link", name="Close council setup").click()
+                dialog.get_by_role("link", name="Close setup").click()
                 page.locator("#message-input").fill("Keep this unfinished question")
                 page.locator(f'a.conversation-item[href="/conversations/{running_id}"]').click()
                 expect(page.locator("#message-input")).to_be_enabled()

@@ -8,9 +8,13 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
+from pydantic import ValidationError
+
 from backend import branches, council
-from backend.config import CouncilConfig
+from backend.config import CouncilConfig, Settings, use_settings
 from backend.council_settings import CouncilSettingsStore
+from backend.credentials import CredentialsStore
+from backend.failures import ProviderError
 from backend.projects import ProjectStore
 from backend.storage import Conversation, ConversationStore
 from backend.usage import track_requests
@@ -19,9 +23,10 @@ logger = logging.getLogger(__name__)
 
 
 class RunError(Exception):
-    def __init__(self, message: str, status_code: int = 400):
+    def __init__(self, message: str, status_code: int = 400, *, setup_required: bool = False):
         super().__init__(message)
         self.status_code = status_code
+        self.setup_required = setup_required
 
 
 @dataclass
@@ -45,6 +50,7 @@ class Run:
     )
     loading_stage: str | None = None
     error: str | None = None
+    error_setup_required: bool = False
     done: bool = False
     deleted: bool = False
     saved: bool = False
@@ -76,11 +82,16 @@ class RunManager:
     """One active turn per conversation, with bounded completed-event retention."""
 
     def __init__(
-        self, store: ConversationStore, settings: CouncilSettingsStore, projects: ProjectStore
+        self,
+        store: ConversationStore,
+        settings: CouncilSettingsStore,
+        projects: ProjectStore,
+        credentials: CredentialsStore,
     ):
         self.store = store
         self.settings = settings
         self.projects = projects
+        self.credentials = credentials
         self.runs: dict[str, Run] = {}
         self.active: dict[str, Run] = {}
 
@@ -146,10 +157,34 @@ class RunManager:
         messages = conversation["messages"]
         try:
             configuration = self.settings.get()
+        except ValidationError as error:
+            issues = error.errors(include_input=False)
+            empty_members = any(
+                issue["loc"] == ("members",) and issue["type"] == "too_short" for issue in issues
+            )
+            message = (
+                "Configure at least one council model in Setup before sending a message."
+                if empty_members
+                else "Model settings are missing or invalid. Open Setup to review the council, chairman, and title model."
+            )
+            raise RunError(message, 503, setup_required=True) from None
         except (ValueError, OSError) as error:
             raise RunError(
-                "Council settings could not be loaded. Open Setup Council to repair them.", 503
+                "Council settings could not be loaded. Open Setup to repair them.",
+                503,
+                setup_required=True,
             ) from error
+        try:
+            provider_settings = self.credentials.get()
+        except (ValueError, OSError) as error:
+            raise RunError(
+                "API key settings could not be loaded. Open Setup to replace the key.",
+                503,
+                setup_required=True,
+            ) from error
+        key = provider_settings.openrouter_api_key
+        if key is None or not key.get_secret_value().strip():
+            raise RunError(str(ProviderError("missing_key")), setup_required=True)
         pending = bool(messages and messages[-1]["role"] == "user")
         if edit_message_id is not None:
             original = self.user_message(conversation, edit_message_id)
@@ -163,7 +198,6 @@ class RunManager:
                 {"role": "user", "content": query, "council_enabled": council_enabled},
                 original["parent_id"],
             )
-            self.store.save(conversation)
         elif content is None:
             if not pending:
                 raise RunError("No unanswered message to retry.")
@@ -181,7 +215,15 @@ class RunManager:
                 {"role": "user", "content": query, "council_enabled": council_enabled},
                 messages[-1]["id"] if messages else None,
             )
+
+        question.pop("last_error", None)
+        try:
             self.store.save(conversation)
+        except OSError:
+            raise RunError(
+                "Your question could not be saved. Check storage permissions and free space, then try again.",
+                503,
+            ) from None
 
         completed = [key for key, run in self.runs.items() if run.done]
         for key in completed[:-99]:
@@ -198,7 +240,9 @@ class RunManager:
         run.result["requests"] = conversation.get("request_usage", {}).get(question["id"], [])
         self.runs[run.id] = run
         self.active[conversation_id] = run
-        run.task = asyncio.create_task(self._execute(run), name=f"council-{run.id}")
+        run.task = asyncio.create_task(
+            self._execute(run, provider_settings), name=f"council-{run.id}"
+        )
         return run
 
     @staticmethod
@@ -243,9 +287,9 @@ class RunManager:
                 return
             self.store.update_title(run.conversation_id, title)
             run.publish({"type": "title_complete", "data": {"title": title}})
-        except Exception:
+        except Exception as error:
             # A failed title must never discard a successful council answer.
-            logger.exception("Could not generate a conversation title")
+            logger.error("Could not generate a conversation title (%s)", type(error).__name__)
 
     def _usage_changed(self, run: Run) -> None:
         if run.deleted:
@@ -253,8 +297,11 @@ class RunManager:
         self.store.update_usage(run.conversation_id, run.message_id, run.result["requests"])
         run.publish({"type": "usage_update", "data": deepcopy(run.result["requests"])})
 
-    async def _execute(self, run: Run) -> None:
-        with track_requests(run.result["requests"], lambda: self._usage_changed(run), run.id):
+    async def _execute(self, run: Run, settings: Settings) -> None:
+        with (
+            use_settings(settings),
+            track_requests(run.result["requests"], lambda: self._usage_changed(run), run.id),
+        ):
             await self._execute_turn(run)
 
     async def _execute_turn(self, run: Run) -> None:
@@ -301,12 +348,14 @@ class RunManager:
             )
             raise
         except Exception as error:
-            logger.exception("Council run failed: %s", run.id)
-            run.error = (
-                str(error)
-                if isinstance(error, council.CouncilError)
-                else "The response could not be completed. Please retry."
-            )
+            logger.error("Council run %s failed (%s)", run.id, type(error).__name__)
+            if isinstance(error, (council.CouncilError, ProviderError)):
+                run.error = str(error)
+                run.error_setup_required = getattr(error, "setup_required", False)
+            elif isinstance(error, OSError):
+                run.error = "The response could not be saved. Check storage permissions and free space, then retry."
+            else:
+                run.error = "The response could not be completed. Please retry."
         finally:
             if title_task is not None and not title_task.done():
                 title_task.cancel()
@@ -314,11 +363,29 @@ class RunManager:
             run.loading_stage = None
             run.done = True
             self.active.pop(run.conversation_id, None)
+            if run.error and not run.deleted:
+                try:
+                    self.store.set_message_error(
+                        run.conversation_id,
+                        run.message_id,
+                        {
+                            "message": run.error,
+                            "setup_required": run.error_setup_required,
+                        },
+                    )
+                except (OSError, ValueError):
+                    logger.error("Could not save failure details for run %s", run.id)
             # Subscribers render controls from current state; announce completion only
             # after cleanup releases the conversation for edits and retries.
             if not run.deleted:
                 run.publish(
-                    {"type": "error", "message": run.error} if run.error else {"type": "complete"}
+                    {
+                        "type": "error",
+                        "message": run.error,
+                        "setup_required": run.error_setup_required,
+                    }
+                    if run.error
+                    else {"type": "complete"}
                 )
 
     async def close(self) -> None:

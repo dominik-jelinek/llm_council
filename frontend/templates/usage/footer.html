@@ -1,6 +1,9 @@
 {% macro usage_footer(requests, label='Interaction') %}
 {% set totals = summarize_usage(requests) %}
 <footer class="usage-footer">
+  {% if requests | selectattr('status', 'equalto', 'failed') | list %}
+  <span class="usage-status">Some model requests failed. See Details.</span>
+  {% endif %}
   <span class="usage-cost">{{ 'Reported cost' if totals.partial else 'Cost' }}: {{ totals.cost_usd | cost }}{% if totals.cost_usd is not none %} USD{% endif %}</span>
   <span class="usage-cache">Cached input: {{ ('%.1f%%' | format(totals.cache_percent)) if totals.cache_percent is not none else 'Unavailable' }}</span>
   <button type="button" class="usage-details-button secondary-button" aria-haspopup="dialog" aria-label="{{ label }} cost details">Details</button>
@@ -18,7 +21,7 @@
           {% for request in requests %}
           {% set row = summarize_usage([request]) %}
           <tr>
-            <th scope="row">{{ loop.index }}. {{ phase_labels.get(request.phase, 'Request') }}<span class="usage-model">{{ model_label(request.model, request.reasoning_effort) }}</span>{% if request.status != 'complete' %}<span class="usage-status">{{ request.status | capitalize }}</span>{% endif %}</th>
+            <th scope="row">{{ loop.index }}. {{ phase_labels.get(request.phase, 'Request') }}<span class="usage-model">{{ model_label(request.model, request.reasoning_effort) }}</span>{% if request.status != 'complete' %}<span class="usage-status">{{ request.status | capitalize }}</span>{% endif %}{% if request.error %}<span class="usage-status">{{ request.error.message }}</span>{% endif %}</th>
             <td>{{ row.cost_usd | cost }}</td>
             <td>{{ row.input_tokens | tokens }}</td>
             <td>{{ row.cached_tokens | tokens }}{% if row.cache_percent is not none %}<span class="usage-subvalue">{{ '%.1f%%' | format(row.cache_percent) }}</span>{% endif %}</td>

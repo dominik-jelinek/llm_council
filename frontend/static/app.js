@@ -2,6 +2,7 @@
 (() => {
   let followLatest = true;
   let focusedMessage = null;
+  let pressedBackdrop = null;
   const stageStates = new Map();
 
   function resizeComposer(input) {
@@ -89,7 +90,26 @@
     if (add) add.disabled = rows.length >= 26;
   }
 
+  function backdropDialog(event) {
+    const dialog = event.target;
+    if (!dialog.matches('dialog[open]')) return null;
+    const bounds = dialog.getBoundingClientRect();
+    return event.clientX < bounds.left || event.clientX > bounds.right ||
+      event.clientY < bounds.top || event.clientY > bounds.bottom ? dialog : null;
+  }
+
+  document.addEventListener('pointerdown', (event) => {
+    pressedBackdrop = backdropDialog(event);
+  });
+
   document.addEventListener('click', (event) => {
+    const backdrop = backdropDialog(event);
+    const dismiss = backdrop && backdrop === pressedBackdrop;
+    pressedBackdrop = null;
+    if (dismiss) {
+      backdrop.close();
+      return;
+    }
     const usage = event.target.closest('.usage-details-button');
     if (usage) {
       const template = usage.closest('.usage-footer').querySelector('.usage-template');

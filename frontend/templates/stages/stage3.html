@@ -1,15 +1,9 @@
-{% from "copy.html" import copy_button %}
-{% from "usage/footer.html" import usage_footer %}
 {% if message.stage3 %}
 <details class="stage stage3" id="stage-{{ message_id }}-stage3" open>
   <summary class="stage-title">{{ 'Stage 3: Final Council Answer' if message.stage1 else 'Chairman Answer' }}</summary>
-  <div class="final-response">
-    <div class="message-header">
-      <div class="chairman-label">Chairman: {{ model_label(message.stage3.model, message.stage3.get('reasoning_effort')) | short_model }}</div>
-      {{ copy_button(message.stage3.response, 'Copy final answer') }}
-    </div>
+  <div class="stage-body final-response">
+    <div class="chairman-label">Chairman: {{ model_label(message.stage3.model, message.stage3.get('reasoning_effort')) | short_model }}</div>
     <div class="final-text markdown-content" hx-disable>{{ message.stage3.response | markdown }}</div>
-    {{ usage_footer([message.stage3.request] if message.stage3.request else [], 'Chairman request') }}
   </div>
 </details>
 {% endif %}

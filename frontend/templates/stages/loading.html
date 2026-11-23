@@ -1,8 +1,8 @@
 {% set labels = {'stage1': 'Running Stage 1: Collecting individual responses...', 'stage2': 'Running Stage 2: Peer rankings...', 'stage3': 'Running Stage 3: Final synthesis...'} %}
 <details class="stage stage-placeholder" id="stage-{{ message_id }}-{{ stage }}" {% if stage == 'stage3' %}open{% endif %}>
 <summary class="stage-title">{{ labels[stage] }}</summary>
-<div class="stage-loading" role="status">
+<div class="stage-body"><div class="stage-loading" role="status">
   <span class="spinner" aria-hidden="true"></span>
   <span>{{ labels[stage] }}</span>
-</div>
+</div></div>
 </details>

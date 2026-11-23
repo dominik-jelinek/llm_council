@@ -203,7 +203,7 @@ class FailureTests(unittest.IsolatedAsyncioTestCase):
             await run.task
         self.assertIsNone(run.error)
         saved = self.store.get(run.conversation_id)
-        self.assertEqual(saved["title"], "New Conversation")
+        self.assertEqual(saved["title"], "Question")
         self.assertEqual(len(saved["messages"]), 2)
         title = next(row for row in run.result["requests"] if row["phase"] == "title")
         self.assertEqual(title["error"]["code"], "model")

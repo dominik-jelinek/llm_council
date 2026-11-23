@@ -70,6 +70,29 @@ def check_composer(page):
     expect(page.get_by_role("button", name="Send", exact=True)).to_be_disabled()
 
 
+def check_response_layout(message):
+    expect(message).to_have_css("border-top-width", "1px")
+    expect(message).to_have_css("background-color", "rgb(255, 255, 255)")
+    previous = None
+    for stage in message.locator("details.stage").all():
+        expect(stage).to_have_css("background-color", "rgba(0, 0, 0, 0)")
+        expect(stage).to_have_css("border-radius", "0px")
+        expect(stage).to_have_css("border-left-width", "0px")
+        box = stage.bounding_box()
+        if previous:
+            assert abs(box["y"] - previous["y"] - previous["height"]) < 1
+        previous = box
+
+    footer = message.locator(".message-footer")
+    copy = footer.get_by_role("button", name="Copy final answer").bounding_box()
+    usage = footer.locator(".usage-footer").bounding_box()
+    bounds = footer.bounding_box()
+    padding = footer.evaluate("element => parseFloat(getComputedStyle(element).paddingRight)")
+    assert abs(copy["x"] + copy["width"] - bounds["x"] - bounds["width"] + padding) < 1
+    assert abs(copy["y"] + copy["height"] / 2 - usage["y"] - usage["height"] / 2) < 1
+    assert usage["x"] + usage["width"] < copy["x"]
+
+
 def main():
     failures = 0
     model_calls = []
@@ -235,7 +258,12 @@ def main():
                     flush=True,
                 )
 
-                interaction = page.locator('.assistant-message > [id^="usage-"] .usage-footer')
+                council_message = page.locator(".assistant-message")
+                expect(council_message).to_have_count(1)
+                expect(council_message.locator("details.stage")).to_have_count(3)
+                expect(council_message.locator(".usage-footer")).to_have_count(1)
+                check_response_layout(council_message)
+                interaction = council_message.locator(".message-footer .usage-footer")
                 expect(interaction.locator(".usage-cost")).to_have_text("Cost: $0.0091 USD")
                 expect(interaction.locator(".usage-cache")).to_have_text("Cached input: 75.0%")
                 interaction.get_by_role("button", name="Interaction cost details").click()
@@ -252,35 +280,54 @@ def main():
                     "PASS: interaction cost, cached fraction, per-request token details", flush=True
                 )
 
-                def assert_copy(name, expected):
-                    button = page.get_by_role("button", name=name, exact=True)
-                    button.click()
-                    expect(button.locator("..").locator(".copy-status")).to_have_text("Copied!")
-                    assert page.evaluate("navigator.clipboard.readText()") == expected
+                def assert_copy(name, expected, count=2):
+                    buttons = page.get_by_role("button", name=name, exact=True)
+                    expect(buttons).to_have_count(count)
+                    for button in buttons.all():
+                        button.click()
+                        expect(button.locator("..").locator(".copy-status")).to_have_text("Copied!")
+                        assert page.evaluate("navigator.clipboard.readText()") == expected
 
-                assert_copy("Copy your message", question + "\nt")
+                assert_copy("Copy your message", question + "\nt", count=1)
                 assert_copy("Copy alpha response", RESPONSES[MODELS[0]]["content"])
                 assert_copy("Copy alpha evaluation", RANKINGS[MODELS[0]]["content"])
                 assert_copy(
                     "Copy final answer", "## Final answer\n\nThe council agrees on a useful answer."
                 )
+                final_copy = page.get_by_role("button", name="Copy final answer").last
+                assert (
+                    final_copy.bounding_box()["y"]
+                    >= page.locator(".stage3").bounding_box()["y"]
+                    + page.locator(".stage3").bounding_box()["height"]
+                )
+                user_copy = page.get_by_role("button", name="Copy your message").last
+                user_content = page.locator(".user-message .message-content").bounding_box()
+                assert (
+                    user_copy.bounding_box()["y"] + user_copy.bounding_box()["height"]
+                    <= user_content["y"]
+                )
+                check_response_layout(council_message)
                 page.evaluate("""() => {
                     window.savedWriteText = navigator.clipboard.writeText;
                     navigator.clipboard.writeText = async () => { throw new Error('Denied'); };
                 }""")
-                page.get_by_role("button", name="Copy final answer").click()
-                expect(page.locator(".stage3 .copy-status")).to_contain_text("Copy failed")
+                page.get_by_role("button", name="Copy final answer").last.click()
+                expect(page.locator(".message-footer .copy-status")).to_contain_text("Copy failed")
                 page.evaluate("""() => {
                     navigator.clipboard.writeText = window.savedWriteText;
                     window.savedClipboard = navigator.clipboard;
                     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
                 }""")
-                page.get_by_role("button", name="Copy final answer").click()
-                expect(page.locator(".stage3 .copy-status")).to_have_text("Copied!")
+                page.get_by_role("button", name="Copy final answer").last.click()
+                expect(page.locator(".message-footer .copy-status")).to_have_text("Copied!")
                 assert page.evaluate("window.savedClipboard.readText()") == (
                     "## Final answer\n\nThe council agrees on a useful answer."
                 )
                 page.evaluate("delete navigator.clipboard")
+                page.locator(".stage1 > summary").click()
+                page.locator(".stage2 > summary").click()
+                page.locator("#messages").evaluate("element => element.scrollTop = 0")
+                page.screenshot(path="/tmp/llm-council-message-layout.png")
                 print("PASS: exact Markdown copying, denied clipboard, HTTP fallback", flush=True)
 
                 followup_draft = "An unfinished follow-up\nwith another line"
@@ -331,6 +378,7 @@ def main():
                 expect(page.locator(".stage1")).to_have_count(2)
                 assert len(model_calls) == before_followup
                 expect(switch).not_to_be_checked()
+                check_response_layout(page.locator(".assistant-message").last)
                 page.reload()
                 expect(page.locator("#message-input")).to_have_value("")
                 expect(page.locator(".stage3")).to_have_count(3)
@@ -339,7 +387,8 @@ def main():
                 expect(page.locator(".aggregate-rankings")).to_have_count(2)
                 expect(switch).not_to_be_checked()
                 page.get_by_role("button", name="Copy final answer").last.click()
-                expect(page.locator(".stage3 .copy-status").last).to_have_text("Copied!")
+                expect(page.locator(".message-footer .copy-status").last).to_have_text("Copied!")
+                check_response_layout(page.locator(".assistant-message").last)
                 assert (
                     page.evaluate("navigator.clipboard.readText()")
                     == "A contextual follow-up answer."
@@ -563,6 +612,8 @@ def main():
                 check_composer(page)
                 expect(page.locator("#message-input")).to_be_in_viewport()
                 assert not page.evaluate("document.documentElement.scrollWidth > window.innerWidth")
+                for message in page.locator(".assistant-message").all():
+                    check_response_layout(message)
                 page.locator("#messages").evaluate("element => element.scrollTop = 0")
                 page.screenshot(path="/tmp/llm-council-htmx-mobile.png")
                 page.get_by_role("button", name="Interaction cost details").last.click()

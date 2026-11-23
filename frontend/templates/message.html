@@ -30,12 +30,14 @@
   </div>
   {% else %}
   <div class="assistant-message">
-    <div class="message-label">{{ 'LLM Council' if message.stage1 else 'Chairman' }}</div>
+    {% with council_enabled = message.stage1 %}{% include "response_header.html" %}{% endwith %}
     {% set metadata = message.get('metadata') or ranking_metadata(message.stage1, message.stage2) %}
     {% include "stages/stage1.html" %}
     {% include "stages/stage2.html" %}
     {% include "stages/stage3.html" %}
-    {{ usage_footer(conversation.get('request_usage', {}).get(message.parent_id, []), 'Interaction') }}
+    {% with requests = conversation.get('request_usage', {}).get(message.parent_id, []) %}
+      {% include "response_footer.html" %}
+    {% endwith %}
   </div>
   {% endif %}
 </article>

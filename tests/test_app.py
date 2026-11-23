@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import re
 import tempfile
 import unittest
@@ -12,7 +13,7 @@ from backend import council
 from backend.api import completed_result
 from backend.events import encode_event
 from backend.main import create_app
-from backend.rendering import render, render_markdown
+from backend.rendering import render, render_markdown, static_url
 from backend.runs import RunError
 from backend.storage import ConversationStore
 from backend.usage import begin_request, finish_request
@@ -63,6 +64,94 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(answer["stage3"]["model"], "example/chairman")
         self.assertTrue(run.done)
         self.assertNotIn(self.conversation_id, self.runs.active)
+
+    async def test_first_question_has_a_title_before_any_model_finishes(self):
+        for enabled in (True, False):
+            with self.subTest(council_enabled=enabled):
+                title_started, release = asyncio.Event(), asyncio.Event()
+
+                async def delayed_single(model, messages, timeout=120.0):
+                    if timeout == 30.0:
+                        title_started.set()
+                    await release.wait()
+                    return await single_reply(model, messages, timeout)
+
+                async def delayed_parallel(models, messages):
+                    await release.wait()
+                    return await parallel_reply(models, messages)
+
+                with (
+                    patch.object(council, "query_model", side_effect=delayed_single),
+                    patch.object(council, "query_models_parallel", side_effect=delayed_parallel),
+                ):
+                    run = self.runs.start(
+                        None, "  First question\nabout titles  ", council_enabled=enabled
+                    )
+                    try:
+                        await asyncio.wait_for(title_started.wait(), 1)
+                        saved = self.store.get(run.conversation_id)
+                        self.assertEqual(len(saved["messages"]), 1)
+                        self.assertEqual(saved["title"], "First question about titles")
+                        page = await self.client.get(f"/conversations/{run.conversation_id}")
+                        self.assertIn(
+                            '<span class="conversation-title">First question about titles</span>',
+                            page.text,
+                        )
+                    finally:
+                        release.set()
+                        await run.task
+                self.assertEqual(
+                    self.store.get(run.conversation_id)["title"], "A useful conversation"
+                )
+                events = await self.client.get(f"/runs/{run.id}/events")
+                self.assertIn(
+                    '<span class="conversation-title">A useful conversation</span>', events.text
+                )
+
+    async def test_existing_untitled_conversations_display_a_short_question_title(self):
+        question = "A long first question " * 5
+        self.store.append_message(self.conversation_id, {"role": "user", "content": question})
+        path = self.store.directory / f"{self.conversation_id}.json"
+        for title in (None, "", "  ", "New Conversation"):
+            with self.subTest(title=title):
+                saved = json.loads(path.read_text())
+                if title is None:
+                    saved.pop("title", None)
+                else:
+                    saved["title"] = title
+                path.write_text(json.dumps(saved))
+                before = path.read_bytes()
+                restored = self.store.get(self.conversation_id)
+                self.assertEqual(restored["title"], question[:47] + "...")
+                self.assertEqual(self.store.list()[0]["title"], restored["title"])
+                self.assertEqual(path.read_bytes(), before)
+
+    async def test_empty_generated_title_does_not_erase_the_question_title(self):
+        async def empty_title(model, messages, timeout=120.0):
+            if timeout == 30.0:
+                return {"content": '  "" \n '}
+            return await single_reply(model, messages, timeout)
+
+        with patch.object(council, "query_model", side_effect=empty_title):
+            run = self.runs.start(None, "A useful first question")
+            await run.task
+        self.assertIsNone(run.error)
+        self.assertEqual(self.store.get(run.conversation_id)["title"], "A useful first question")
+
+    async def test_one_question_keeps_its_title_when_the_response_and_title_fail(self):
+        with (
+            patch.object(council, "query_model", AsyncMock(return_value=None)),
+            patch.object(council, "query_models_parallel", AsyncMock(return_value=[])),
+            self.assertLogs("backend.runs", level="ERROR"),
+        ):
+            run = self.runs.start(None, "A question worth keeping")
+            await run.task
+        saved = self.store.get(run.conversation_id)
+        self.assertEqual(len(saved["messages"]), 1)
+        self.assertEqual(saved["title"], "A question worth keeping")
+        self.assertIsNotNone(run.error)
+        page = await self.client.get(f"/conversations/{run.conversation_id}")
+        self.assertIn('<span class="conversation-title">A question worth keeping</span>', page.text)
 
     async def test_followup_only_calls_chairman_and_uses_final_answers(self):
         first = self.runs.start(self.conversation_id, "First question")
@@ -564,6 +653,20 @@ class AppTests(unittest.IsolatedAsyncioTestCase):
 
 
 class StorageAndRenderingTests(unittest.TestCase):
+    def test_static_urls_refresh_when_an_asset_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frontend = Path(directory)
+            asset = frontend / "static" / "app.css"
+            asset.parent.mkdir()
+            asset.write_text("old styles", encoding="utf-8")
+            with patch("backend.rendering.FRONTEND_DIR", frontend):
+                original = static_url("app.css")
+                self.assertEqual(static_url("app.css"), original)
+                modified = asset.stat().st_mtime_ns + 1_000_000_000
+                asset.write_text("new styles", encoding="utf-8")
+                os.utime(asset, ns=(modified, modified))
+                self.assertNotEqual(static_url("app.css"), original)
+
     def test_copy_source_is_escaped_and_preserves_original_markdown(self):
         source = '</span><script>alert(1)</script>\n\n**Čau** & "hello"'
         html = render("message.html", message={"role": "user", "content": source})

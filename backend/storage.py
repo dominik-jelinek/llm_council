@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 from backend import branches
 from backend.branches import Conversation
 from backend.persistence import write_json
+from backend.titles import DEFAULT_TITLE, conversation_title
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,11 @@ class ConversationStore:
             conversation = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return None
-        conversation.setdefault("title", "New Conversation")
-        return branches.prepare(conversation)
+        branches.prepare(conversation)
+        conversation["title"] = conversation_title(
+            conversation.get("title"), conversation["messages"]
+        )
+        return conversation
 
     @staticmethod
     def draft() -> Conversation:
@@ -48,7 +52,7 @@ class ConversationStore:
             {
                 "id": str(uuid4()),
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "title": "New Conversation",
+                "title": DEFAULT_TITLE,
                 "messages": [],
             }
         )
@@ -63,6 +67,9 @@ class ConversationStore:
 
     def save(self, conversation: Conversation) -> None:
         branches.prepare(conversation)
+        conversation["title"] = conversation_title(
+            conversation.get("title"), conversation["messages"]
+        )
         # The flat history is a view of the selected path, not a second stored copy.
         write_json(
             self._path(conversation["id"]),

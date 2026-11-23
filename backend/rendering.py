@@ -16,6 +16,12 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 markdown = MarkdownIt("commonmark", {"html": False})
 
 
+def static_url(filename: str) -> str:
+    """Refresh cached assets when the file changes, including during development."""
+    version = (FRONTEND_DIR / "static" / filename).stat().st_mtime_ns
+    return f"/static/{filename}?v={version}"
+
+
 @lru_cache(maxsize=256)
 def render_markdown(text: str) -> Markup:
     # CommonMark with raw HTML disabled also rejects unsafe link protocols.
@@ -43,6 +49,7 @@ templates = Environment(
 templates.filters.update(markdown=render_markdown, short_model=short_model, deanonymize=deanonymize)
 templates.filters.update(cost=format_cost, tokens=format_tokens)
 templates.globals.update(
+    static_url=static_url,
     ranking_metadata=ranking_metadata,
     model_label=model_label,
     result_model_label=result_model_label,

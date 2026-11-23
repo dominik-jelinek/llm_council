@@ -1,6 +1,7 @@
 """Async OpenRouter SDK adapter; provider failures remain isolated per model."""
 
 import asyncio
+import json
 import logging
 from collections.abc import Sequence
 from typing import Any
@@ -73,6 +74,29 @@ def provider_failure(error: Exception) -> ProviderError:
     if isinstance(error, httpx.TransportError):
         return ProviderError("network")
     status = getattr(error, "status_code", None)
+    if status in {400, 422}:
+        try:
+            detail = json.loads(error.body)["error"]
+            message = (
+                str(detail.get("message", ""))
+                + " "
+                + str(detail.get("metadata", {}).get("raw", ""))
+            )
+        except (AttributeError, KeyError, TypeError, ValueError):
+            message = ""
+        message = message.lower()
+        if any(word in message for word in ("reasoning", "thinking")) and any(
+            word in message
+            for word in (
+                "unsupported",
+                "not support",
+                "cannot",
+                "invalid",
+                "must be",
+                "only supports",
+            )
+        ):
+            return ProviderError("reasoning")
     codes = {
         400: "request",
         401: "authentication",

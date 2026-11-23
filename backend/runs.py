@@ -283,7 +283,7 @@ class RunManager:
             title = await council.generate_conversation_title(
                 run.query, run.configuration.title_model
             )
-            if run.deleted:
+            if run.deleted or not title:
                 return
             self.store.update_title(run.conversation_id, title)
             run.publish({"type": "title_complete", "data": {"title": title}})

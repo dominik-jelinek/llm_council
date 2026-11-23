@@ -1,0 +1,5 @@
+{% from "copy.html" import copy_button %}
+<div class="message-header response-header" id="response-header-{{ message_id }}" {% if oob %}hx-swap-oob="outerHTML"{% endif %}>
+  <div class="message-label">{{ 'LLM Council' if council_enabled else 'Chairman' }}</div>
+  {% if message.stage3 %}{{ copy_button(message.stage3.response, 'Copy final answer') }}{% endif %}
+</div>

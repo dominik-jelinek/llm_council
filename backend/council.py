@@ -7,6 +7,7 @@ from typing import Any
 from backend.config import CouncilConfig, ModelSpec, model_label
 from backend.failures import ProviderError
 from backend.openrouter import query_model, query_models_parallel
+from backend.titles import short_title
 from backend.usage import request_phase
 
 
@@ -388,7 +389,7 @@ def calculate_aggregate_rankings(
     return aggregate
 
 
-async def generate_conversation_title(user_query: str, model: ModelSpec) -> str:
+async def generate_conversation_title(user_query: str, model: ModelSpec) -> str | None:
     """
     Generate a short title for a conversation based on the first user message.
 
@@ -396,7 +397,7 @@ async def generate_conversation_title(user_query: str, model: ModelSpec) -> str:
         user_query: The first user message
 
     Returns:
-        A short title (3-5 words)
+        A short title (3-5 words), or None to keep the local fallback.
     """
     title_prompt = f"""Generate a very short title (3-5 words maximum) that summarizes the following question.
 The title should be concise and descriptive. Do not use quotes or punctuation in the title.
@@ -411,22 +412,12 @@ Title:"""
         try:
             response = await query_model(model, messages, timeout=30.0)
         except ProviderError:
-            return "New Conversation"
+            return None
 
     if response is None:
-        # Fallback to a generic title
-        return "New Conversation"
+        return None
 
-    title = response.get("content", "New Conversation").strip()
-
-    # Clean up the title - remove quotes, limit length
-    title = title.strip("\"'")
-
-    # Truncate if too long
-    if len(title) > 50:
-        title = title[:47] + "..."
-
-    return title
+    return short_title(response.get("content", "")) or None
 
 
 async def stream_turn(

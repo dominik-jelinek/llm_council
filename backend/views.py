@@ -193,11 +193,31 @@ def stage_html(run: Run, event: dict) -> tuple[str, str]:
         return stage, render("stages/loading.html", stage=stage, message_id=run.id)
     message = {**run.result, stage: event["data"]}
     metadata = event.get("metadata", message["metadata"])
-    return stage, render(
+    html = render(
         f"stages/{stage}.html",
         message=message,
         message_id=run.id,
         metadata=metadata,
+    )
+    if stage == "stage3":
+        html += render(
+            "response_header.html",
+            message=message,
+            message_id=run.id,
+            council_enabled=run.council_enabled,
+            oob=True,
+        )
+        html += response_footer(run)
+    return stage, html
+
+
+def response_footer(run: Run, requests: list[dict] | None = None) -> str:
+    return render(
+        "response_footer.html",
+        message=run.result,
+        message_id=run.id,
+        requests=run.result["requests"] if requests is None else requests,
+        oob=True,
     )
 
 
@@ -223,7 +243,7 @@ async def run_events(run_id: str, request: Request, runs: Runs, after: int = 0):
                 name, html = stage_html(run, event)
             elif kind == "usage_update":
                 name = "controls"
-                html = render("usage/interaction.html", run=run, requests=event["data"], oob=True)
+                html = response_footer(run, event["data"])
             elif kind == "title_complete":
                 name = "controls"
                 html = render("sidebar.html", **context(runs, run.conversation_id), oob=True)

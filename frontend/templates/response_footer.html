@@ -1,0 +1,6 @@
+{% from "copy.html" import copy_button %}
+{% from "usage/footer.html" import usage_footer %}
+<div class="message-footer" id="response-footer-{{ message_id }}" {% if oob %}hx-swap-oob="outerHTML"{% endif %}>
+  {{ usage_footer(requests, 'Interaction') }}
+  {% if message.stage3 %}{{ copy_button(message.stage3.response, 'Copy final answer') }}{% endif %}
+</div>

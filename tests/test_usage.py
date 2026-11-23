@@ -141,6 +141,10 @@ class UsageRunTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Cached input: 75.0%", page.text)
         self.assertIn("Reasoning", page.text)
         self.assertIn("Title", page.text)
+        self.assertEqual(page.text.count('class="usage-footer"'), 1)
+        self.assertEqual(page.text.count('aria-label="Interaction cost details"'), 1)
+        self.assertNotIn('aria-label="Chairman request cost details"', page.text)
+        self.assertEqual(page.text.count('aria-label="Copy final answer"'), 2)
 
     async def test_title_usage_is_saved_even_when_the_answer_finishes_first(self):
         title_entered, release = asyncio.Event(), asyncio.Event()

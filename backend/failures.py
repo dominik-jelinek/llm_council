@@ -7,6 +7,7 @@ MESSAGES = {
     "access": "OpenRouter denied access to this model or request. Check the model and key permissions in Setup.",
     "model": "The selected model is unavailable. Choose another model in Setup, then retry.",
     "request": "The model rejected this request. Check its settings in Setup or shorten the question.",
+    "reasoning": "This model rejected the reasoning setting. Choose Default or a supported effort in Setup, then retry.",
     "rate_limit": "OpenRouter is rate limiting requests. Wait a moment, then retry.",
     "timeout": "The model took too long to respond. Please retry.",
     "network": "Could not reach OpenRouter. Check the connection, then retry.",
@@ -25,6 +26,7 @@ class ProviderError(Exception):
             "access",
             "model",
             "request",
+            "reasoning",
         }
         super().__init__(MESSAGES[code])
 

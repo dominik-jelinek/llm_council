@@ -1,14 +1,16 @@
 {% from "stages/tabs.html" import model_tabs %}
-{% if message.stage2 %}
+{% if message.stage1 %}
 <details class="stage stage2" id="stage-{{ message_id }}-stage2">
   <summary class="stage-title">Stage 2: Peer Rankings</summary>
-  <h4>Raw Evaluations</h4>
-  <p class="stage-description">Each model evaluated responses anonymized as Response A, B, C, etc. Model names appear in <strong>bold</strong> below for readability; the original evaluation used anonymous labels.</p>
+  <div class="stage-body">
+  {% if message.stage2 %}
   {{ model_tabs(message.stage2, message_id, 'stage2', metadata.get('label_to_model', {})) }}
+  {% else %}
+  <p class="stage-description">No peer evaluations were available.</p>
+  {% endif %}
   {% if metadata.get('aggregate_rankings') %}
   <div class="aggregate-rankings">
-    <h4>Aggregate Rankings (Street Cred)</h4>
-    <p class="stage-description">Combined results across peer evaluations (lower score is better):</p>
+    <h4>Aggregate Rankings</h4>
     <ol class="aggregate-list">
       {% for ranking in metadata.aggregate_rankings %}
       <li class="aggregate-item">
@@ -21,5 +23,6 @@
     </ol>
   </div>
   {% endif %}
+  </div>
 </details>
 {% endif %}

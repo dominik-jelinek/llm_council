@@ -267,6 +267,32 @@ class OpenRouterTests(unittest.IsolatedAsyncioTestCase):
             await openrouter.query_model(("example/model", None), [])
         self.assertEqual(error.exception.code, "network")
 
+    async def test_rejected_title_reasoning_is_actionable_and_default_omits_the_parameter(self):
+        self.response = httpx.Response(
+            400,
+            json={
+                "error": {
+                    "message": "Provider returned error",
+                    "metadata": {"raw": "Thinking cannot be disabled. Private token: sdk-test-key"},
+                }
+            },
+        )
+        with self.assertRaises(ProviderError) as error:
+            await openrouter.query_model(
+                ("google/gemini-4-neon", "none"), [{"role": "user", "content": "Title"}], timeout=30
+            )
+        self.assertEqual(error.exception.code, "reasoning")
+        self.assertTrue(error.exception.setup_required)
+        self.assertIn("Choose Default", str(error.exception))
+        self.assertNotIn("sdk-test-key", str(error.exception))
+        self.assertEqual(json.loads(self.requests[-1].content)["reasoning"], {"effort": "none"})
+        self.response = httpx.Response(200, json=completion("A generated title"))
+        result = await openrouter.query_model(
+            ("google/gemini-4-neon", None), [{"role": "user", "content": "Title"}], timeout=30
+        )
+        self.assertEqual(result["content"], "A generated title")
+        self.assertNotIn("reasoning", json.loads(self.requests[-1].content))
+
     async def test_parallel_failure_preserves_success_and_all_failures_remain_actionable(self):
         members = [("example/one", None), ("example/two", None)]
         with patch.object(
